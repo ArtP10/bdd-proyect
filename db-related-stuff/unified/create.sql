@@ -67,6 +67,15 @@ create table restaurante(
 
 );
 
+create table plato(
+    pla_codigo serial primary key,
+    pla_nombre varchar(50) not null,
+    pla_descripcion varchar(100),
+    pla_costo float not null,
+    fk_restaurante integer not null,
+    constraint check_pla_costo_positive CHECK (pla_costo >= 0), 
+    PRIMARY KEY (fk_restaurante)
+);
 create table proveedor(
     pro_codigo serial primary key,
     pro_nombre varchar(100) not null,
@@ -103,6 +112,12 @@ create table documento(
     fk_via_codigo integer not null,
 
     constraint check_doc_tipo check(doc_tipo IN('Pasaporte', 'Visa', 'Cedula'))
+);
+
+create table tipo_documento                          --tengo duda si es necesaria debido a que ya hay un campo tipo en documento
+    tip_doc_codigo serial primary key,
+    tip_doc_nombre varchar(30) not null,
+    tip_doc_descripcion varchar(100)
 );
 
 create table estado_civil(
@@ -318,6 +333,28 @@ create table lista_deseos(
     primary key(fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado)
 );
 
+create table categoria(
+    cat_codigo serial primary key,
+    cat_nombre varchar(50) not null,
+    cat_descripcion varchar(200)
+);
+
+create table preferencia(
+    fk_usuario integer not null,
+    fk_categoria integer not null,
+    primary key(fk_usuario, fk_categoria)
+);
+
+create table compra(
+    com_codigo serial primary key,
+    com_monto_total float not null,
+    com_monto_subtotal float ,
+    com_fecha date not null,
+    fk_usuario integer not null,
+    fk_plan_financiamiento integer
+
+);
+
 create table compensacion(
     com_codigo serial primary key,
     com_co2_compensado float not null,
@@ -353,7 +390,7 @@ create table cuo_est(
     cuo_est_fecha timestamp not null,
     cuo_est_fecha_fin timestamp not null,
     primary key(fk_cuo_codigo, fk_est_codigo)
-)
+);
 
 create table res_est(
     res_est_fecha timestamp not null,
@@ -362,4 +399,76 @@ create table res_est(
     fk_detalle_reserva_2 integer not null,
     res_est_fecha_fin timestamp ,
     primary key(fk_detalle_reserva_codigo, fk_estado, fk_detalle_reserva_2)
-)
+);
+
+create table habitacion(
+    hab_num_hab serial primary key,
+    hab_capacidad integer not null,
+    hab_descripcion varchar(100) not null,
+    hab_costo_noche float not null,
+    fk_hotel integer not null,
+    fk_promocion integer,
+    constraint check_hab_tipo check(hab_tipo IN('Individual', 'Doble', 'Suite', 'Otros'))
+);
+
+create table reserva_de_habitacion(
+    res_hab_fecja_hora_inicio TIMESTAMP not null,
+    res_hab_fecha_hora_fin TIMESTAMP not null,
+    res_hab_costo_unitario float not null,
+    fk_habitacion integer not null,
+    fk_detalle_reserva integer not null,
+    fk_detalle_reserva_2 integer not null,
+    fk_paquete_turistico integer,
+    primary key(res_hab_fecha_hora_inicio, fk_habitacion, res_hab_fecha_hora_fin)
+);
+
+create table reserva_restaurante(
+    res_rest_fecha_hora TIMESTAMP not null,
+    res_rest_num_mesa integer not null,
+    res_rest_tamano_mesa integer not null,
+    fk_restauramte integer not null,
+    fk_detalle_reserva integer not null,
+    fk_detalle_reserva_2 integer not null,
+    fk_paquete_turistico integer,
+    primary key(res_rest_fecha_hora, fk_restauramte, res_rest_num_mesa)
+    );
+
+create table pago(
+    pag_codigo serial primary key,
+    pag_monto float not null,
+    pag_fecha_hora timestamp not null,
+    pag_denominacion varchar(50) not null,
+    fk_compra integer not null,
+    fk_tasa_de_cambio integer not null,
+    fk_metodo_pago integer not null
+);
+
+create table reembolso(
+    rem_codigo serial primary key,
+    rem_monto_reembolsado float not null,
+    rem_monto_retenido float not null,
+    rem_fecha date not null,
+    fk_pago integer not null
+);
+
+create table tasa_de_cambio(
+    tas_cam_codigo serial primary key,
+    tas_cam_tasa_valor float not null,
+    tas_cam_fecha_hora_inicio timestamp not null,
+    tas_cam_fecha_hora_fin timestamp,
+    tas_cam_moneda varchar(50) not null,    
+);
+
+create table metodo_pago(
+    met_pag_codigo serial primary key,
+    met_pag_descripcion varchar(200)
+);
+
+create table tarjeta_credito
+    met_pago_codigo serial primary key,
+    tar_cre_numero varchar(20) not null,
+    tar_cre_nombre_titular varchar(100) not null,
+    tar_cre_fecha_vencimiento date not null,
+    tar_cre_codigo_seguridad varchar(10) not null,
+    fk_metodo_pago integer not null
+);

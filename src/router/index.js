@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import Login from '@/views/general/Login.vue';
 import SelfRegisterClient from '@/views/client/SelfRegisterClient.vue';
 import ClientDashboard from '@/views/client/ClientDashboard.vue';
+import AdminDashboard from '@/views/admin/AdminDashboard.vue';
 
 
 const router = createRouter({
@@ -13,14 +14,19 @@ const router = createRouter({
             component: Login
         },
         {
-            path:'/clients/register/',
-            name:'clients-register',
+            path:'/client/register/',
+            name:'client-register',
             component:SelfRegisterClient
         },
         {
-            path:'/clients/dashboard',
-            name:'clients-dashboard',
+            path:'/client/dashboard',
+            name:'client-dashboard',
             component:ClientDashboard
+        },
+        {
+            path:'/admin/dashboard',
+            name:'admin-dashboard',
+            component:AdminDashboard
         }
     ]
 })

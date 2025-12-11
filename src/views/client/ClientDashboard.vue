@@ -7,9 +7,9 @@
       </div>
       <nav class="sidebar-nav">
         <ul>
-          <li v-for="item in menuItems" :key="item" :class="{ active: item === 'Gestion' }">
-            <a href="#">
-              <span v-if="item !== 'Gestion'" class="dot"></span>
+          <li v-for="item in menuItems" :key="item" :class="{ active: item === activeMenuItem }">
+            <a href="#" @click.prevent="activeMenuItem = item">
+              <span v-if="item !== activeMenuItem" class="dot"></span>
               <span v-else class="dot-white"></span>
               {{ item }}
             </a>
@@ -19,48 +19,37 @@
     </aside>
 
     <main class="main-content">
-      <h2 class="page-title">Gestión de perfil</h2>
+      <h2 class="page-title">{{ activeMenuItem }}</h2>
 
-      <div class="tabs">
-        <button class="tab active">Datos personales</button>
-        <button class="tab">Mis documentos</button>
-        <button class="tab">Seguridad</button>
+      <div class="tabs" v-if="activeMenuItem === 'Gestion'">
+         <button class="tab" :class="{ active: activeTab === 'Datos personales' }" @click="activeTab = 'Datos personales'">Datos personales</button>
+         <button class="tab" :class="{ active: activeTab === 'Mis viajeros' }" @click="activeTab = 'Mis viajeros'">Mis viajeros</button> 
+         <button class="tab" :class="{ active: activeTab === 'Seguridad' }" @click="activeTab = 'Seguridad'">Seguridad</button>
       </div>
 
-      <div class="profile-card">
-        <div class="profile-grid">
+      <div v-if="activeMenuItem === 'Gestion'">
           
-          <div class="profile-item">
-            <label>Nombre completo</label>
-            <p class="value">{{ userInfo.user_name || 'Cargando...' }}</p>
+          <div v-if="activeTab === 'Datos personales'" class="profile-card">
+              <h3>Bienvenido, {{ userInfo.user_name }}</h3>
+              <p>Aquí irían tus datos personales...</p>
           </div>
 
-          <div class="profile-item">
-             <label>Edad</label>
-            <p class="value">--</p>
+          <div v-if="activeTab === 'Mis viajeros'">
+              <Travelers />
           </div>
 
-          <div class="profile-item">
-             <label>Correo Electrónico</label>
-            <p class="value">{{ userInfo.user_email || 'No disponible' }}</p>
+          <div v-if="activeTab === 'Seguridad'" class="profile-card">
+              <p>Configuración de seguridad...</p>
           </div>
 
-          <div class="profile-item">
-            <label>Pasaporte</label>
-            <p class="value">Número: --</p>
-          </div>
+      </div>
 
-          <div class="profile-item full-width">
-            <label>Dirección</label>
-            <p class="value">--</p>
-          </div>
-          
-        </div>
-        
-        <div class="card-footer">
-            <small>Completa tu información de viajero para ver más detalles.</small>
+      <div v-else>
+        <div class="profile-card">
+          <p>Contenido de {{ activeMenuItem }} en construcción...</p>
         </div>
       </div>
+
     </main>
   </div>
 </template>
@@ -68,9 +57,16 @@
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+// IMPORTANTE: Importar el componente hijo
+import Travelers from './Travelers.vue'; 
 
 const router = useRouter();
 const userInfo = ref({});
+
+// IMPORTANTE: Definir las variables reactivas
+const activeMenuItem = ref('Resumen'); // Pestaña inicial del sidebar
+const activeTab = ref('Datos personales'); // Pestaña inicial dentro de Gestión
+
 const menuItems = [
   'Resumen', 'Mis Servicios', 'Pagos', 'Millas', 
   'Deseos', 'Sostenibilidad', 'Notificaciones', 
@@ -82,7 +78,6 @@ onMounted(() => {
   if (session) {
     userInfo.value = JSON.parse(session);
   } else {
-    // Si no hay sesión, mandar al login
     router.push('/login');
   }
 });
@@ -103,6 +98,7 @@ onMounted(() => {
 
 /* Active Item Style (Gradient) */
 .sidebar-nav li.active a { background: linear-gradient(90deg, #ec4899, #3b82f6); color: white; }
+.sidebar-nav li.active .dot { background-color: white; } /* Corrección visual para el punto */
 .dot-white { width: 8px; height: 8px; background-color: white; border-radius: 50%; margin-right: 12px; }
 
 /* Main Content */

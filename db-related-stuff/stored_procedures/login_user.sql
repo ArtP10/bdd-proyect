@@ -7,7 +7,8 @@ CREATE OR REPLACE PROCEDURE sp_login_usuario(
     INOUT o_usu_rol varchar DEFAULT NULL,
     INOUT o_status_code integer DEFAULT NULL,
     INOUT o_mensaje varchar DEFAULT NULL,
-    INOUT o_rol_privilegios TEXT[] DEFAULT NULL
+    INOUT o_rol_privilegios TEXT[] DEFAULT NULL,
+    INOUT o_usu_correo varchar DEFAULT NULL -- Se eliminó la coma aquí
 )
 LANGUAGE plpgsql
 AS $$
@@ -17,8 +18,10 @@ DECLARE
     v_rol_codigo Integer;
 BEGIN
     -- 1. Buscar Usuario y Rol
-    SELECT u.usu_codigo, u.usu_nombre_usuario, u.usu_contrasena, r.rol_nombre, r.rol_codigo
-    INTO o_usu_codigo, o_usu_nombre, v_contrasena_guardada, v_rol_nombre, v_rol_codigo
+    -- Corregido: u.usu_email en vez de u.o_usu_correo
+    -- Corregido: r.rol_codigo en vez de r.rol_codigom
+    SELECT u.usu_codigo, u.usu_nombre_usuario, u.usu_contrasena, r.rol_nombre, r.rol_codigo, u.usu_email
+    INTO o_usu_codigo, o_usu_nombre, v_contrasena_guardada, v_rol_nombre, v_rol_codigo, o_usu_correo
     FROM usuario u
     JOIN rol r ON u.fk_rol_codigo = r.rol_codigo
     WHERE u.usu_nombre_usuario = i_busqueda_nombre;
@@ -38,15 +41,17 @@ BEGIN
         o_mensaje := 'Contraseña incorrecta';
         o_usu_codigo := NULL;
         o_usu_nombre := NULL;
+        o_usu_correo := NULL; -- Limpiamos el correo también por seguridad
         RETURN;
     END IF;
 
-    -- Caso 403: Rol incorrecto (Ej: Intentar entrar al panel Admin siendo Cliente)
+    -- Caso 403: Rol incorrecto
     IF v_rol_nombre <> i_busqueda_tipo THEN
         o_status_code := 403;
         o_mensaje := 'No tiene permisos para este rol';
         o_usu_codigo := NULL;
         o_usu_nombre := NULL;
+        o_usu_correo := NULL;
         RETURN;
     END IF;
 
@@ -55,8 +60,7 @@ BEGIN
     o_status_code := 200;
     o_mensaje := 'Sesion iniciada correctamente';
 
-    -- 4. Obtener Privilegios en un Arreglo
-    -- Usamos COALESCE para devolver un arreglo vacío {} si no hay privilegios, en vez de NULL
+    -- 4. Obtener Privilegios
     SELECT COALESCE(ARRAY_AGG(p.pri_nombre), '{}')
     INTO o_rol_privilegios
     FROM privilegio p

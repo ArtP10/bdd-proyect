@@ -24,16 +24,9 @@ create table usuario(
     usu_nombre_usuario varchar(30) not null unique,
     usu_total_millas integer not null default 0,
     fk_rol_codigo integer not null,
-    usu_email varchar(100) not null unique
+    usu_email varchar(100) not null unique,
+    fk_lugar integer not null
 );
-
-create table correo_electronico(
-    cor_ele_prefijo varchar(100) not null,
-    cor_ele_dominio varchar(30) not null,
-    fk_usuario integer not null,
-    primary key(cor_ele_prefijo, cor_ele_dominio)
-);
-
 -- 3
 create table lugar (
     lug_codigo serial primary key,
@@ -252,10 +245,10 @@ create table detalle_reserva(
     fk_viajero_numero integer not null,
     fk_compra integer not null,
     fk_servicio integer,
+    fk_paquete_turistico integer,
     fk_pue_tras integer,
     fk_pue_tras1 integer,
     fk_pue_tras2 integer,
-    fk_paquete_turistico integer,
     det_res_estado varchar(50) not null,
     constraint check_det_res_estado check(det_res_estado IN('Pendiente', 'Confirmada', 'Cancelada')),
     PRIMARY KEY (fk_compra,det_res_codigo)
@@ -267,6 +260,7 @@ create table pue_tras(
     fk_tra_codigo integer not null,
     fk_detalle_reserva integer ,
     fk_detalle_reserva_2 integer,
+    fk_paquete_turistico integer,
     primary key(fk_puesto_codigo, fk_tra_codigo)
 );
 
@@ -401,12 +395,11 @@ create table habitacion(
     hab_descripcion varchar(100) not null,
     hab_costo_noche float not null,
     fk_hotel integer not null,
-    fk_promocion integer,
-    constraint check_hab_tipo check(hab_tipo IN('Individual', 'Doble', 'Suite', 'Otros'))
+    fk_promocion integer
 );
 
 create table reserva_de_habitacion(
-    res_hab_fecja_hora_inicio TIMESTAMP not null,
+    res_hab_fecha_hora_inicio TIMESTAMP not null,
     res_hab_fecha_hora_fin TIMESTAMP not null,
     res_hab_costo_unitario float not null,
     fk_habitacion integer not null,

@@ -27,6 +27,13 @@ create table usuario(
     usu_email varchar(100) not null unique
 );
 
+create table correo_electronico(
+    cor_ele_prefijo varchar(100) not null,
+    cor_ele_dominio varchar(30) not null,
+    fk_usuario integer not null,
+    primary key(cor_ele_prefijo, cor_ele_dominio)
+);
+
 -- 3
 create table lugar (
     lug_codigo serial primary key,
@@ -68,13 +75,13 @@ create table restaurante(
 );
 
 create table plato(
-    pla_codigo serial primary key,
+    pla_codigo integer not null,
     pla_nombre varchar(50) not null,
     pla_descripcion varchar(100),
     pla_costo float not null,
     fk_restaurante integer not null,
-    constraint check_pla_costo_positive CHECK (pla_costo >= 0), 
-    PRIMARY KEY (fk_restaurante)
+    constraint check_pla_costo_positive CHECK (pla_costo >= 0) ,
+	primary key (pla_codigo,fk_restaurante)
 );
 create table proveedor(
     pro_codigo serial primary key,
@@ -114,11 +121,6 @@ create table documento(
     constraint check_doc_tipo check(doc_tipo IN('Pasaporte', 'Visa', 'Cedula'))
 );
 
-create table tipo_documento                          --tengo duda si es necesaria debido a que ya hay un campo tipo en documento
-    tip_doc_codigo serial primary key,
-    tip_doc_nombre varchar(30) not null,
-    tip_doc_descripcion varchar(100)
-);
 
 create table estado_civil(
     edo_civ_codigo serial primary key,
@@ -157,7 +159,7 @@ create table promocion(
     pro_codigo serial primary key,
     pro_fecha_hora_vencimiento TIMESTAMP not null,
     pro_descuento float not null,
-    pro_descripcion varchar(100),
+    pro_descripcion varchar(100)
 );
 
 create Table paquete_turistico(
@@ -231,16 +233,16 @@ create table traslado(
 );
 
 CREATE Table puesto(
-    pue_codigo serial primary key,
+    pue_codigo integer not null,
     pue_descripcion varchar(100) not null,
     pue_costo_agregado float,
     fk_medio_transporte integer not null,
-    PRIMARY KEY (fk_medio_transporte)
+    PRIMARY KEY (fk_medio_transporte,pue_codigo)
 
 );
 
 create table detalle_reserva(
-    det_res_codigo serial primary key,
+    det_res_codigo integer not null,
     det_res_fecha_creacion DATE not null,
     det_res_hora_creacion TIME not null,
     det_res_monto_total float not null,
@@ -255,7 +257,7 @@ create table detalle_reserva(
     fk_paquete_turistico integer,
     det_res_estado varchar(50) not null,
     constraint check_det_res_estado check(det_res_estado IN('Pendiente', 'Confirmada', 'Cancelada')),
-    PRIMARY KEY (fk_compra)
+    PRIMARY KEY (fk_compra,det_res_codigo)
 );
 
 create table pue_tras(
@@ -274,7 +276,7 @@ create table resena(
     res_fecha_hota_creacion TIMESTAMP not null,
     fk_detalle_reserva integer not null,
     fk_detalle_reserva_2 integer NOT NULL,
-    constraint check_res_calificacion check(res_calificacion >= 1 AND res_calificacion <= 5)
+    constraint check_res_calificacion check(res_calificacion_numerica >= 1 AND res_calificacion_numerica <= 5)
 );
 
 create table reclamo(
@@ -302,7 +304,7 @@ create table auditoria(
     aud_fecha_hora timestamp not null,
     fk_accion integer not null,
     fk_recurso integer not null,
-    fk_usuario integer not null,
+    fk_usuario integer not null
 );
 
 create table milla(
@@ -314,15 +316,6 @@ create table milla(
     fk_compra integer not null,
     fk_pago integer not null
 
-)
-
-create table compra(
-    com_codigo serial primary key,
-    com_monto_total float not null,
-    com_monto_subtotal float ,
-    com_fecha date not null,
-    fk_usuario integer not null,
-    fk_plan_financiamiento integer
 );
 
 create table lista_deseos(
@@ -456,7 +449,7 @@ create table tasa_de_cambio(
     tas_cam_tasa_valor float not null,
     tas_cam_fecha_hora_inicio timestamp not null,
     tas_cam_fecha_hora_fin timestamp,
-    tas_cam_moneda varchar(50) not null,    
+    tas_cam_moneda varchar(50) not null   
 );
 
 create table metodo_pago(
@@ -464,11 +457,87 @@ create table metodo_pago(
     met_pag_descripcion varchar(200)
 );
 
-create table tarjeta_credito
+create table tarjeta_credito(
     met_pago_codigo serial primary key,
     tar_cre_numero varchar(20) not null,
-    tar_cre_nombre_titular varchar(100) not null,
+    tar_cre_cvv varchar(10) not null,
     tar_cre_fecha_vencimiento date not null,
-    tar_cre_codigo_seguridad varchar(10) not null,
-    fk_metodo_pago integer not null
+    tar_cre_banco_emisor varchar(100) not null,
+    tar_cre_nombre_titular varchar(100) not null,
+    constraint validar_fecha_vencimiento CHECK (tar_cre_fecha_vencimiento > CURRENT_DATE),
+    constraint fk_metodo_pago foreign key (met_pago_codigo) references metodo_pago(met_pag_codigo)
+);
+
+create table tarjeta_debito(
+    met_pago_codigo serial primary key,
+    tar_deb_numero varchar(20) not null,
+    tar_deb_cvv varchar(10) not null,
+    tar_deb_fecha_vencimiento date not null,
+    tar_deb_banco_emisor varchar(100) not null,
+    tar_deb_nombre_titular varchar(100) not null,
+    constraint validar_fecha_vencimiento CHECK (tar_deb_fecha_vencimiento > CURRENT_DATE),    
+    constraint fk_metodo_pago_debito foreign key (met_pago_codigo) references metodo_pago(met_pag_codigo)
+);
+
+create table cheque(
+    met_pago_codigo serial primary key,
+    che_codigo_cuenta_cliente varchar(30) not null,
+    che_numero varchar(30) not null,
+    che_nombre_titular varchar(100) not null,
+    che_banco_emisor varchar(100) not null,
+    cheque_fecha_emision date not null,    
+    constraint fk_metodo_pago_cheque foreign key (met_pago_codigo) references metodo_pago(met_pag_codigo)
+);
+
+create table deposito_bancario(
+    met_pago_codigo serial primary key,
+    dep_ban_numero_cuenta varchar(30) not null,
+    dep_ban_banco_emisor varchar(100) not null,
+    dep_ban_numero_referencia varchar(30),                  --opcional
+    dep_fecha_transaccion date,    
+    constraint fk_metodo_pago_deposito foreign key (met_pago_codigo) references metodo_pago(met_pag_codigo)
+);
+
+create table transferencia_bancaria(
+    met_pago_codigo serial primary key,
+    trans_ban_numero_referencia integer,                 --opcional
+    trans_ban_fecha_hora TIMESTAMP ,                 --opcional
+    tras_ban_numero_cuenta_emisora varchar(30) not null,    
+    constraint fk_metodo_pago_transferencia foreign key (met_pago_codigo) references metodo_pago(met_pag_codigo)
+);
+
+create table pago_movil_interbancario(
+    met_pago_codigo serial primary key,
+    pag_movil_int_numero_referencia varchar(15) ,           --opcional
+    pag_movil_int_fecha_hora TIMESTAMP ,                  --opcional
+    constraint fk_metodo_pago_pago_movil foreign key (met_pago_codigo) references metodo_pago(met_pag_codigo)
+);
+
+create table criptomoneda(
+    met_pago_codigo serial primary key,
+    cri_hash_transaccion varchar(50) ,           --opcional
+    cri_direccion_billetera_emisora varchar(100) not null,
+    constraint fk_metodo_pago_criptomoneda foreign key (met_pago_codigo) references metodo_pago(met_pag_codigo)
+);
+
+create table zelle(
+    met_pago_codigo serial primary key,
+    zel_titular_cuenta varchar(15) not null,
+    zel_correo_electronico varchar(100) not null,
+    zel_codigo_transaccion varchar(50) UNIQUE,           --opcional
+    constraint fk_metodo_pago_zelle foreign key (met_pago_codigo) references metodo_pago(met_pag_codigo)
+);
+
+create table efectivo(
+    met_pago_codigo serial primary key,
+    efe_moneda varchar(30),           --opcional
+    efe_codigo varchar(100),         --opcional
+    constraint fk_metodo_pago_efectivo foreign key (met_pago_codigo) references metodo_pago(met_pag_codigo)
+);
+
+create table milla_pago(
+    met_pag_codigo serial primary key,
+    mil_codigo integer UNIQUE,           --opcional
+    mil_cantidad_utilizada integer,     --opcional
+    constraint fk_metodo_pago_milla foreign key (met_pag_codigo) references metodo_pago(met_pag_codigo)
 );

@@ -69,7 +69,7 @@ const form = reactive({
 });
 
 const goToRegister = () => {
-  router.push('/clients/register');
+  router.push('/client/register');
 };
 
 const handleLogin = async () => {
@@ -99,6 +99,7 @@ const handleLogin = async () => {
       user_id: data.data.user_id,
       user_name: data.data.user_name,
       user_role: data.data.user_role,
+      user_correo: data.data.user_correo,
       privileges: data.data.privileges 
     }));
 

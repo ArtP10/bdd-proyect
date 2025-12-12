@@ -90,6 +90,7 @@ create table proveedor(
     pro_tipo varchar(50) not null,
     fk_lugar integer not null,
 
+    -- Constraints internos
     CONSTRAINT check_tipo_proveedor CHECK(pro_tipo IN('Aereolinea', 'Terrestre', 'Maritimo', 'Otros'))
 );
 

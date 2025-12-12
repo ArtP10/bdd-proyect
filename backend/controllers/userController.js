@@ -47,27 +47,28 @@ const loginUser = async (req, res) => {
   }
 };
 
+
 const registerClient = async (req, res) => {
-  // Estos keys deben coincidir con lo que envías en el body desde Vue
-  const { username, password, email } = req.body;
+  // 1. Extraemos fk_lugar del body
+  const { username, password, email, fk_lugar } = req.body;
 
   try {
     /* Llamada al SP: sp_registrar_usuario_cliente
-      Inputs (3): nombre, contraseña, correo
+      Inputs (4): nombre, contraseña, correo, fk_lugar
       Outputs (5): status, mensaje, id_usuario, nombre_usuario, correo_usuario
-      Total placeholders: 8
+      Total placeholders: 9
     */
     const query = `
-      CALL sp_registrar_usuario_cliente($1, $2, $3, NULL, NULL, NULL, NULL, NULL)
+      CALL sp_registrar_usuario_cliente($1, $2, $3, $4, NULL, NULL, NULL, NULL, NULL)
     `;
-    const values = [username, password, email];
+    
+    // 2. Agregamos fk_lugar al array de valores
+    const values = [username, password, email, fk_lugar];
 
     const result = await pool.query(query, values);
     
-    // Postgres devuelve los parámetros INOUT en la primera fila
     const dbResponse = result.rows[0];
 
-    // Verificamos el código de estado que nos dio la base de datos (201 = Created)
     if (dbResponse.o_status_code === 201) {
       res.status(201).json({
         success: true,
@@ -79,7 +80,6 @@ const registerClient = async (req, res) => {
         }
       });
     } else {
-      // Manejo de errores controlados (409 Conflict, 400 Bad Request, etc.)
       res.status(dbResponse.o_status_code || 400).json({
         success: false,
         message: dbResponse.o_mensaje
@@ -346,6 +346,201 @@ const createProvider = async (req, res) => {
 };
 
 
+const _getProviderId = async (client, userId) => {
+    const res = await client.query('SELECT pro_codigo FROM proveedor WHERE fk_usu_codigo = $1', [userId]);
+    if (res.rows.length === 0) throw new Error('Usuario no es proveedor');
+    return res.rows[0].pro_codigo;
+};
+
+// 1. OBTENER FLOTA
+const getFleet = async (req, res) => {
+    const { user_id } = req.body;
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            
+            // Obtenemos el ID del proveedor asociado a este usuario
+            const pro_codigo = await _getProviderId(client, user_id);
+
+            const query = 'CALL sp_obtener_flota_proveedor($1, NULL, NULL, NULL)';
+            const result = await client.query(query, [pro_codigo]);
+            const response = result.rows[0];
+            
+            if (response.o_status_code === 200) {
+                const cursorResult = await client.query(`FETCH ALL IN "${response.o_cursor}"`);
+                await client.query('COMMIT');
+                res.status(200).json({ success: true, data: cursorResult.rows });
+            } else {
+                await client.query('ROLLBACK');
+                res.status(response.o_status_code).json({ success: false, message: response.o_mensaje });
+            }
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally { client.release(); }
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+// 2. REGISTRAR AVIÓN
+const createPlane = async (req, res) => {
+    const { user_id, capacidad, descripcion } = req.body;
+    try {
+        // Necesitamos el pro_codigo para el insert
+        const client = await pool.connect(); 
+        const pro_codigo = await _getProviderId(client, user_id);
+        client.release();
+
+        const query = `CALL sp_registrar_avion($1, $2, $3, $4, NULL, NULL)`;
+        const values = [user_id, pro_codigo, capacidad, descripcion];
+        
+        const result = await pool.query(query, values);
+        const resp = result.rows[0];
+        
+        res.status(resp.o_status_code).json({ success: resp.o_status_code === 201, message: resp.o_mensaje });
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+// 3. MODIFICAR AVIÓN
+const updatePlane = async (req, res) => {
+    const { user_id, med_tra_codigo, capacidad, descripcion } = req.body;
+    try {
+        const query = `CALL sp_modificar_avion($1, $2, $3, $4, NULL, NULL)`;
+        const result = await pool.query(query, [user_id, med_tra_codigo, capacidad, descripcion]);
+        const resp = result.rows[0];
+        
+        res.status(resp.o_status_code).json({ success: resp.o_status_code === 200, message: resp.o_mensaje });
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+// 4. ELIMINAR AVIÓN
+const deletePlane = async (req, res) => {
+    const { user_id, med_tra_codigo } = req.body;
+    try {
+        const query = `CALL sp_eliminar_avion($1, $2, NULL, NULL)`;
+        const result = await pool.query(query, [user_id, med_tra_codigo]);
+        const resp = result.rows[0];
+        
+        res.status(resp.o_status_code).json({ success: resp.o_status_code === 200, message: resp.o_mensaje });
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+const getCompatibleTerminals = async (req, res) => {
+    const { user_id } = req.body;
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const query = 'CALL sp_obtener_terminales_compatibles($1, NULL, NULL, NULL)';
+            const result = await client.query(query, [user_id]);
+            const response = result.rows[0];
+            
+            if (response.o_status_code === 200) {
+                const cursorResult = await client.query(`FETCH ALL IN "${response.o_cursor}"`);
+                await client.query('COMMIT');
+                res.status(200).json({ success: true, data: cursorResult.rows });
+            } else {
+                await client.query('ROLLBACK');
+                res.status(response.o_status_code).json({ success: false, message: response.o_mensaje });
+            }
+        } finally { client.release(); }
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+// 2. Obtener Rutas del Proveedor
+const getRoutes = async (req, res) => {
+    const { user_id } = req.body;
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const query = 'CALL sp_obtener_rutas_proveedor($1, NULL, NULL, NULL)';
+            const result = await client.query(query, [user_id]);
+            const response = result.rows[0];
+            
+            if (response.o_status_code === 200) {
+                const cursorResult = await client.query(`FETCH ALL IN "${response.o_cursor}"`);
+                await client.query('COMMIT');
+                res.status(200).json({ success: true, data: cursorResult.rows });
+            } else {
+                await client.query('ROLLBACK');
+                res.status(response.o_status_code).json({ success: false, message: response.o_mensaje });
+            }
+        } finally { client.release(); }
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+// 3. Crear Ruta
+const createRoute = async (req, res) => {
+    const { user_id, costo, millas, fk_origen, fk_destino } = req.body;
+    try {
+        const query = `CALL sp_registrar_ruta($1, $2, $3, $4, $5, NULL, NULL)`;
+        const result = await pool.query(query, [user_id, costo, millas, fk_origen, fk_destino]);
+        const resp = result.rows[0];
+        res.status(resp.o_status_code).json({ success: resp.o_status_code === 201, message: resp.o_mensaje });
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+// 4. Eliminar Ruta
+const deleteRoute = async (req, res) => {
+    const { user_id, rut_codigo } = req.body;
+    try {
+        const query = `CALL sp_eliminar_ruta($1, $2, NULL, NULL)`;
+        const result = await pool.query(query, [user_id, rut_codigo]);
+        const resp = result.rows[0];
+        res.status(resp.o_status_code).json({ success: resp.o_status_code === 200, message: resp.o_mensaje });
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+const getTravels = async (req, res) => {
+    const { user_id } = req.body;
+    try {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const query = 'CALL sp_obtener_traslados_proveedor($1, NULL, NULL, NULL)';
+            const result = await client.query(query, [user_id]);
+            const response = result.rows[0];
+            
+            if (response.o_status_code === 200) {
+                const cursorResult = await client.query(`FETCH ALL IN "${response.o_cursor}"`);
+                await client.query('COMMIT');
+                res.status(200).json({ success: true, data: cursorResult.rows });
+            } else {
+                await client.query('ROLLBACK');
+                res.status(response.o_status_code).json({ success: false, message: response.o_mensaje });
+            }
+        } finally { client.release(); }
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+// 2. CREAR TRASLADO
+const createTravel = async (req, res) => {
+    const { user_id, rut_codigo, med_tra_codigo, fecha_inicio, fecha_fin, co2 } = req.body;
+    try {
+        const query = `CALL sp_registrar_traslado($1, $2, $3, $4, $5, $6, NULL, NULL)`;
+        // Importante: El orden de los parámetros debe coincidir con el SP
+        const values = [user_id, rut_codigo, med_tra_codigo, fecha_inicio, fecha_fin, co2];
+        
+        const result = await pool.query(query, values);
+        const resp = result.rows[0];
+        
+        res.status(resp.o_status_code).json({ success: resp.o_status_code === 201, message: resp.o_mensaje });
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+// 3. EDITAR TRASLADO (Solo fechas)
+const updateTravel = async (req, res) => {
+    const { user_id, tras_codigo, fecha_inicio, fecha_fin } = req.body;
+    try {
+        const query = `CALL sp_modificar_traslado($1, $2, $3, $4, NULL, NULL)`;
+        const result = await pool.query(query, [user_id, tras_codigo, fecha_inicio, fecha_fin]);
+        const resp = result.rows[0];
+        
+        res.status(resp.o_status_code).json({ success: resp.o_status_code === 200, message: resp.o_mensaje });
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
 module.exports = {
     loginUser,
     registerClient,
@@ -359,5 +554,16 @@ module.exports = {
     deleteDocument,
     getLocations,
     getProviders,
-    createProvider
+    createProvider,
+    deletePlane,
+    createPlane,
+    getFleet,
+    updatePlane,
+    deleteRoute,
+    createRoute,
+    getRoutes,
+    getCompatibleTerminals,
+    getTravels,
+    createTravel,
+    updateTravel
 };

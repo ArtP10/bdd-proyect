@@ -261,3 +261,4 @@ WHERE m.lug_nombre IN ('Miranda', 'Sucre', 'Libertador', 'Bolívar')
 AND m.lug_tipo = 'Municipio'
 ORDER BY m.lug_nombre, e.lug_nombre;
 --si se quieren mas estados, agregar al IN ('');
+

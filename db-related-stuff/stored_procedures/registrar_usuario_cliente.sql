@@ -2,6 +2,7 @@ CREATE OR REPLACE PROCEDURE sp_registrar_usuario_cliente(
     IN i_nombre_usuario VARCHAR,
     IN i_contrasena VARCHAR,
     IN i_correo VARCHAR,
+    IN i_fk_lugar INTEGER, -- NUEVO PARÁMETRO
     INOUT o_status_code INTEGER DEFAULT NULL,
     INOUT o_mensaje VARCHAR DEFAULT NULL,
     INOUT o_usu_codigo INTEGER DEFAULT NULL,
@@ -22,38 +23,47 @@ BEGIN
         RETURN;
     END IF;
 
-    -- 2. Validar si el usuario ya existe
+    -- 2. Validar que el Lugar sea un ESTADO válido
+    IF NOT EXISTS (SELECT 1 FROM lugar WHERE lug_codigo = i_fk_lugar AND lug_tipo = 'Estado') THEN
+        o_status_code := 400;
+        o_mensaje := 'Error: Debe seleccionar un Estado válido para el domicilio.';
+        RETURN;
+    END IF;
+
+    -- 3. Validar si el usuario ya existe
     IF EXISTS (SELECT 1 FROM usuario WHERE usu_nombre_usuario = i_nombre_usuario) THEN
         o_status_code := 409; -- Conflict
         o_mensaje := 'El nombre de usuario ya está en uso.';
         RETURN;
     END IF;
 
-    -- 3. Validar si el correo ya existe (Dada tu restricción UNIQUE)
+    -- 4. Validar si el correo ya existe
     IF EXISTS (SELECT 1 FROM usuario WHERE usu_email = i_correo) THEN
-        o_status_code := 409; -- Conflict
+        o_status_code := 409;
         o_mensaje := 'El correo electrónico ya está registrado.';
         RETURN;
     END IF;
 
-    -- 4. Insertar el Usuario (AHORA INCLUYENDO EL EMAIL)
+    -- 5. Insertar el Usuario (Con fk_lugar)
     INSERT INTO usuario (
         usu_nombre_usuario, 
         usu_contrasena, 
         fk_rol_codigo, 
         usu_total_millas, 
-        usu_email -- <--- Aquí estaba el problema, ahora lo incluimos
+        usu_email,
+        fk_lugar -- NUEVO CAMPO
     )
     VALUES (
         i_nombre_usuario, 
         i_contrasena, 
         v_rol_cliente_id, 
         0, 
-        i_correo -- <--- Insertamos el valor que viene de Vue
+        i_correo,
+        i_fk_lugar -- NUEVO VALOR
     )
     RETURNING usu_codigo INTO o_usu_codigo;
 
-    -- 5. Retornar éxito
+    -- 6. Retornar éxito
     o_status_code := 201; -- Created
     o_mensaje := 'Usuario registrado exitosamente.';
     o_usu_nombre := i_nombre_usuario;

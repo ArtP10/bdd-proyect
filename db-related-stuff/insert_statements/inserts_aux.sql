@@ -42,5 +42,5 @@ Values
 
 INSERT INTO rol_privilegio(fk_pri_codigo, fk_rol_codigo)
 VALUES
-(7,3)
+(7,3),
 (9,3)

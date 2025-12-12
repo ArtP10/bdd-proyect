@@ -78,7 +78,7 @@ CREATE TABLE proveedor(
     fk_usu_codigo INTEGER NOT NULL UNIQUE, -- Agregado para el Login
 
     -- Constraints internos
-    CONSTRAINT check_tipo_proveedor CHECK(pro_tipo IN('Aereolinea', 'Terrestre', 'Maritimo', 'Otros'))
+    CONSTRAINT check_tipo_proveedor CHECK(pro_tipo IN('Aerolinea', 'Terrestre', 'Maritimo', 'Otros'))
 );
 
 create table nacionalidad(
@@ -340,11 +340,15 @@ CREATE TABLE medio_transporte(
 );
 
 -- 1.10 Puesto
-CREATE TABLE puesto(
-    pue_codigo SERIAL PRIMARY KEY, 
+CREATE TABLE puesto (
+
+    fk_med_tra_codigo INTEGER NOT NULL,
+    pue_codigo INTEGER NOT NULL, 
     pue_descripcion VARCHAR(100) NOT NULL,
     pue_costo_agregado NUMERIC(10,2) DEFAULT 0,
-    fk_med_tra_codigo INTEGER NOT NULL
+    CONSTRAINT pk_puesto PRIMARY KEY (fk_med_tra_codigo, pue_codigo),
+    CONSTRAINT fk_pue_medio FOREIGN KEY (fk_med_tra_codigo) 
+        REFERENCES medio_transporte(med_tra_codigo) ON DELETE CASCADE
 );
 
 -- 1.11 Ruta
@@ -384,6 +388,18 @@ CREATE TABLE paq_ser(
 CREATE TABLE paq_tras(
     fk_paq_tur_codigo INTEGER NOT NULL,
     fk_tras_codigo INTEGER NOT NULL
+);
+
+CREATE TABLE pue_tras (
+    pue_tras_codigo SERIAL PRIMARY KEY,
+    
+    fk_tras_codigo INTEGER NOT NULL,
+ 
+    fk_pue_codigo INTEGER NOT NULL,
+    fk_med_tra_codigo INTEGER NOT NULL, 
+    
+
+    fk_paq_tur_codigo INTEGER
 );
 
 --Revisar si se hace una restriccion con las promociones apra evitar conflictos con paquetes con promociones que tambien incluyen productos con promociones

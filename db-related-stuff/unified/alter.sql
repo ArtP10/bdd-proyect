@@ -23,8 +23,11 @@ add constraint fk_lugar_restaurante foreign key (fk_lugar) references lugar(lug_
 alter table hotel
 add constraint fk_lugar_hotel foreign key(fk_lugar) references lugar(lug_codigo);
 
+--revisar esto al construir desde 0
 alter table proveedor
 add constraint fk_lugar_proveedor foreign key(fk_lugar) references lugar(lug_codigo);
+ADD COLUMN fk_usu_codigo INTEGER NOT NULL UNIQUE,
+ADD CONSTRAINT fk_pro_usuario FOREIGN KEY (fk_usu_codigo) REFERENCES usuario(usu_codigo);
 
 
 ALTER TABLE telefono
@@ -46,6 +49,7 @@ ALTER TABLE telefono
 ALTER TABLE proveedor
 add column fk_usu_codigo integer not null unique,
 add constraint fk_usu_codigo_proveedor foreign key (fk_usu_codigo) references usuario(usu_codigo);
+
 
 
 ALTER TABLE documento
@@ -125,3 +129,27 @@ ALTER TABLE paq_tras
     ADD CONSTRAINT pk_paq_tras PRIMARY KEY (fk_paq_tur_codigo, fk_tras_codigo), -- PK Compuesta
     ADD CONSTRAINT fk_pt_paquete FOREIGN KEY (fk_paq_tur_codigo) REFERENCES paquete_turistico(paq_tur_codigo),
     ADD CONSTRAINT fk_pt_traslado FOREIGN KEY (fk_tras_codigo) REFERENCES traslado(tras_codigo);
+
+
+ALTER TABLE usuario
+    ADD COLUMN fk_lugar INTEGER NOT NULL default 218,  --Este el id de distrito capital
+    ADD CONSTRAINT fk_usu_lugar FOREIGN KEY (fk_lugar) REFERENCES lugar(lug_codigo);
+
+
+ALTER TABLE pue_tras
+
+    ADD CONSTRAINT fk_pt_traslado 
+    FOREIGN KEY (fk_tras_codigo) REFERENCES traslado(tras_codigo),
+
+   
+    ADD CONSTRAINT fk_pt_puesto 
+    FOREIGN KEY (fk_med_tra_codigo, fk_pue_codigo) 
+    REFERENCES puesto(fk_med_tra_codigo, pue_codigo),
+
+
+    ADD CONSTRAINT fk_pt_paquete 
+    FOREIGN KEY (fk_paq_tur_codigo) REFERENCES paquete_turistico(paq_tur_codigo),
+
+
+    ADD CONSTRAINT un_asiento_por_vuelo 
+    UNIQUE (fk_tras_codigo, fk_pue_codigo, fk_med_tra_codigo);

@@ -413,11 +413,11 @@ create table reserva_restaurante(
     res_rest_fecha_hora TIMESTAMP not null,
     res_rest_num_mesa integer not null,
     res_rest_tamano_mesa integer not null,
-    fk_restauramte integer not null,
+    fk_restaurante integer not null,
     fk_detalle_reserva integer not null,
     fk_detalle_reserva_2 integer not null,
     fk_paquete_turistico integer,
-    primary key(res_rest_fecha_hora, fk_restauramte, res_rest_num_mesa)
+    primary key(res_rest_fecha_hora, fk_restaurante, res_rest_num_mesa)
     );
 
 create table pago(

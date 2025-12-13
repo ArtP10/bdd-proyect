@@ -1,0 +1,9 @@
+- Agregar mas paises con sus estados en la tabla nacionalidad
+- Agregar visualizacion de datos personales en el menu como direccion de usuario
+- Agregar regez para validacion de emails, etc.
+- Validar que no se puedan poner fechas invalidas (naciste manana)
+- cambiar anos servicio por fecha fundacion
+- Agregar sp's para editar y eliminar proveedores desde vista del proveedor
+- Agregar sp's para eliminar viajeros desde vista del cliente
+- ver que cdlm se hace con la descripcion y monto agreagao de los puestos en med transporte
+- Agregar logica para puestos ocupados en aviones - un puesto esta ocupado si esta presente en la tabla muchos a muchos de un traslado en curso

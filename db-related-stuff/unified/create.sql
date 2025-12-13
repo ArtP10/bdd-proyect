@@ -43,7 +43,7 @@ CREATE TABLE telefono (
     tel_prefijo_operador VARCHAR(5) NOT NULL, -- Ej: 0414
     tel_sufijo VARCHAR(15) NOT NULL, 
     
-    fk_proveedor integer,
+    fk_prov_codigo integer,
     fk_hotel integer,
     fk_restaurante integer         -- El resto del número
 );
@@ -52,7 +52,7 @@ create table hotel(
     hot_codigo serial primary key,
     hot_nombre varchar(50) not null,
     hot_descripcion varchar(100) not null,
-    hot_valoracion float not null default 0,
+    hot_valoracion numeric(10,2) not null default 0,
     hot_anos_servicio integer not null default 0,
     fk_lugar integer not null
 );
@@ -62,7 +62,7 @@ create table restaurante(
     res_nombre varchar(50) not null,
     res_descripcion varchar(100) not null,
     res_anos_servicio integer not null default 0,
-    res_valoracion float not null default 0,
+    res_valoracion numeric(10,2) not null default 0,
     fk_lugar integer not null
 
 );
@@ -71,7 +71,7 @@ create table plato(
     pla_codigo integer not null,
     pla_nombre varchar(50) not null,
     pla_descripcion varchar(100),
-    pla_costo float not null,
+    pla_costo numeric(10,2) not null,
     fk_restaurante integer not null,
     constraint check_pla_costo_positive CHECK (pla_costo >= 0) ,
 	primary key (pla_codigo,fk_restaurante)
@@ -82,7 +82,7 @@ create table proveedor(
     pro_anos_servicio integer not null default 0,
     pro_tipo varchar(50) not null,
     fk_lugar integer not null,
-
+    fk_usu_codigo integer not null,
     -- Constraints internos
     CONSTRAINT check_tipo_proveedor CHECK(pro_tipo IN('Aereolinea', 'Terrestre', 'Maritimo', 'Otros'))
 );
@@ -138,63 +138,69 @@ CREATE table servicio(
     ser_codigo serial primary key,
     ser_nombre varchar(50) not null,
     ser_descripcion varchar(100),
-    ser_costo float not null,
+    ser_costo numeric(10,2)not null,
     ser_fecha_hora_inicio TIMESTAMP not null,
     ser_fecha_hora_fin TIMESTAMP not null,
-    fk_proveedor integer not null,
-    fk_promocion integer,
-    ser_millas_otrogadas integer default 0,
-    sert_tipo varchar(30) not null,
-    CONSTRAINT check_fechas_validas CHECK (ser_fecha_hora_fin >= ser_fecha_hora_inicio),
-    constraint check_ser_tipo check(sert_tipo IN('Vuelo', 'Alojamiento', 'Transporte', 'Tour', 'Comida'))
+    ser_millas_otorgadas integer default 0,
+    ser_tipo varchar(30) not null,
+    fk_prov_codigo integer not null,
+    CONSTRAINT check_fechas_validas CHECK (ser_fecha_hora_fin >= ser_fecha_hora_inicio)
 );
 
 create table promocion(
     pro_codigo serial primary key,
+    pro_nombre varchar(50) not null,
+    pro_descripcion varchar(100),
     pro_fecha_hora_vencimiento TIMESTAMP not null,
-    pro_descuento float not null,
-    pro_descripcion varchar(100)
+    pro_descuento numeric(5,2) not null
 );
 
 create Table paquete_turistico(
     paq_tur_codigo serial primary key,
     paq_tur_nombre VARCHAR(50) not null,
-    paq_tur_monto_total FLOAT not null,
-    paq_tur_monto_subtotal FLOAT,
-    paqu_tur_costo_en_millas INTEGER not NULL,
-    fk_promocion INTEGER,
+    paq_tur_monto_total numeric(10,2) not null,
+    paq_tur_monto_subtotal numeric(10,2),
+    paq_tur_costo_en_millas INTEGER not NULL,
     constraint check_montos_positive CHECK (paq_tur_monto_total >= 0 AND paq_tur_monto_subtotal >= 0)
 
 );
 
-create table servicio_paquete(
+
+CREATE TABLE paq_tras(
+    fk_paq_tur_codigo INTEGER NOT NULL,
+    fk_tras_codigo INTEGER NOT NULL,
+    primary key(fk_paq_tur_codigo, fk_tras_codigo)
+);
+
+
+create table paq_ser(
     fk_paq_tur_codigo integer not null,
     fk_ser_codigo integer not null,
+    cantidad integer default 1,
     primary key(fk_paq_tur_codigo, fk_ser_codigo)
 );
 
 create table regla_paquete(
-    reg_codigo serial primary key,
-    reg_atributo varchar(100) not null,
-    reg_operador varchar(50) ,          --Duda con el operador
-    reg_valor varchar(100) not null,
-    constraint check_reg_tipo check(reg_atributo IN('Edad Minima', 'Edad Maxima', 'Maximo de Personas', 'Otros'))
-);
+    reg_paq_codigo serial primary key,
+    reg_paq_atributo varchar(100) not null,
+    reg_paq_operador varchar(50) ,          --Duda con el operador
+    reg_paq_valor varchar(100) not null
+    );
 
 CREATE table reg_paq_paq(
-    fk_reg_codigo integer not null,
+    fk_reg_paq_codigo integer not null,
     fk_paq_tur_codigo integer not null,
-    primary key(fk_reg_codigo, fk_paq_tur_codigo)
+    primary key(fk_reg_paq_codigo, fk_paq_tur_codigo)
 );
 
 CREATE table ruta(
     rut_codigo serial primary key,
-    rut_costo float not null,
+    rut_costo numeric(10,2) not null,
     rut_millas_otorgadas integer not null,
     rut_tipo varchar(50) not null,
     fk_terminal_origen integer not null,
     fk_terminal_destino integer not null,
-    fk_proveedor integer not null,
+    fk_prov_codigo integer not null,
     constraint check_rut_tipo check(rut_tipo IN('Aerea', 'Terrestre', 'Maritima'))
 );
 
@@ -206,41 +212,57 @@ create table terminal(
     constraint check_ter_tipo check(ter_tipo IN('Aeropuerto', 'Estacion Terrestre', 'Puerto Maritimo'))
 );
 
-create table medio_transoporte(
+create table traslado(
+    tras_codigo serial primary key,
+    tras_fecha_hora_inicio TIMESTAMP not null,
+    tras_fecha_hora_fin TIMESTAMP not null,
+    tras_Co2_emitido numeric(10,2) not null, 
+    fk_rut_codigo integer not null,
+    fk_med_tra_codigo integer not null, --oBSERVACION
+    constraint check_fechas_validas CHECK (tras_fecha_hora_fin >= tras_fecha_hora_inicio)
+);
+
+CREATE TABLE ser_prom(
+    fk_ser_codigo INTEGER NOT NULL,
+    fk_prom_codigo INTEGER NOT NULL,
+    PRIMARY KEY (fk_ser_codigo, fk_prom_codigo)
+);
+CREATE TABLE paq_prom(
+    fk_paq_tur_codigo INTEGER NOT NULL,
+    fk_prom_codigo INTEGER NOT NULL,
+    PRIMARY KEY(fk_paq_tur_codigo, fk_prom_codigo)
+);
+CREATE TABLE tras_prom(
+    fk_tras_codigo INTEGER NOT NULL,
+    fk_prom_codigo INTEGER NOT NULL,
+    PRIMARY KEY(fk_tras_codigo, fk_prom_codigo)
+);
+
+create table medio_transporte(
     med_tra_codigo serial primary key,
     med_tra_capacidad integer not null,
     med_tra_descripcion varchar(100) not null,
     med_tra_tipo varchar(50) not null,
-    fk_proveedor integer not null,
+    fk_prov_codigo integer not null,
     constraint check_med_tra_tipo check(med_tra_tipo IN('Avion', 'Bus', 'Barco', 'Otros'))
-);
-
-create table traslado(
-    tra_codigo serial primary key,
-    tra_fecha_hora_salida TIMESTAMP not null,
-    tra_fecha_hora_llegada TIMESTAMP not null,
-    tras_Co2_emitido float not null, 
-    fk_ruta integer not null,
-    fk_promocion integer,
-    fk_medio_transporte integer not null,
-    constraint check_fechas_validas CHECK (tra_fecha_hora_llegada >= tra_fecha_hora_salida)
 );
 
 CREATE Table puesto(
     pue_codigo integer not null,
     pue_descripcion varchar(100) not null,
-    pue_costo_agregado float,
-    fk_medio_transporte integer not null,
-    PRIMARY KEY (fk_medio_transporte,pue_codigo)
-
+    pue_costo_agregado numeric(10,2) default 0,
+    fk_med_tra_codigo integer not null,
+    CONSTRAINT pk_puesto PRIMARY KEY (fk_med_tra_codigo, pue_codigo),
+    CONSTRAINT fk_pue_medio FOREIGN KEY (fk_med_tra_codigo) 
+        REFERENCES medio_transporte(med_tra_codigo) ON DELETE CASCADE
 );
 
 create table detalle_reserva(
     det_res_codigo integer not null,
     det_res_fecha_creacion DATE not null,
     det_res_hora_creacion TIME not null,
-    det_res_monto_total float not null,
-    det_res_sub_total float not NULL,
+    det_res_monto_total numeric(10,2) not null,
+    det_res_sub_total numeric(10,2) not NULL,
     fk_viajero_codigo integer not null,
     fk_viajero_numero integer not null,
     fk_compra integer not null,
@@ -260,8 +282,7 @@ create table pue_tras(
     fk_tra_codigo integer not null,
     fk_detalle_reserva integer ,
     fk_detalle_reserva_2 integer,
-    fk_paquete_turistico integer,
-    primary key(fk_puesto_codigo, fk_tra_codigo)
+    primary key(fk_puesto_codigo,fk_puesto_2, fk_tra_codigo)
 );
 
 create table resena(
@@ -335,8 +356,8 @@ create table preferencia(
 
 create table compra(
     com_codigo serial primary key,
-    com_monto_total float not null,
-    com_monto_subtotal float ,
+    com_monto_total numeric(10,2) not null,
+    com_monto_subtotal numeric(10,2) ,
     com_fecha date not null,
     fk_usuario integer not null,
     fk_plan_financiamiento integer
@@ -345,22 +366,22 @@ create table compra(
 
 create table compensacion(
     com_codigo serial primary key,
-    com_co2_compensado float not null,
-    com_monto_agregado float not null,
+    com_co2_compensado numeric(10,2) not null,
+    com_monto_agregado numeric(10,2) not null,
     fk_compra integer not null
 );
 
 create table plan_financiamiento(
     plan_fin_codigo serial primary key,
-    plan_fin_tasa_interes float not null,
+    plan_fin_tasa_interes numeric(10,2) not null,
     plan_fin_numero_cuotas integer not null,
-    plan_fin_inicial float not null,
+    plan_fin_inicial numeric(10,2) not null,
     fk_compra integer
 );
 
 create table cuota(
     cuo_codigo serial primary key,
-    cuo_monto float not null,
+    cuo_monto numeric(10,2) not null,
     cuo_fecha_tope date not null,
     cuo_fecha_fin date,
     fk_plan_financiamiento integer not null
@@ -393,7 +414,7 @@ create table habitacion(
     hab_num_hab serial primary key,
     hab_capacidad integer not null,
     hab_descripcion varchar(100) not null,
-    hab_costo_noche float not null,
+    hab_costo_noche numeric(10,2) not null,
     fk_hotel integer not null,
     fk_promocion integer
 );
@@ -401,7 +422,7 @@ create table habitacion(
 create table reserva_de_habitacion(
     res_hab_fecha_hora_inicio TIMESTAMP not null,
     res_hab_fecha_hora_fin TIMESTAMP not null,
-    res_hab_costo_unitario float not null,
+    res_hab_costo_unitario numeric(10,2) not null,
     fk_habitacion integer not null,
     fk_detalle_reserva integer not null,
     fk_detalle_reserva_2 integer not null,
@@ -422,7 +443,7 @@ create table reserva_restaurante(
 
 create table pago(
     pag_codigo serial primary key,
-    pag_monto float not null,
+    pag_monto numeric(10,2) not null,
     pag_fecha_hora timestamp not null,
     pag_denominacion varchar(50) not null,
     fk_compra integer not null,
@@ -432,15 +453,15 @@ create table pago(
 
 create table reembolso(
     rem_codigo serial primary key,
-    rem_monto_reembolsado float not null,
-    rem_monto_retenido float not null,
+    rem_monto_reembolsado numeric(10,2) not null,
+    rem_monto_retenido numeric(10,2) not null,
     rem_fecha date not null,
     fk_pago integer not null
 );
 
 create table tasa_de_cambio(
     tas_cam_codigo serial primary key,
-    tas_cam_tasa_valor float not null,
+    tas_cam_tasa_valor numeric(10,2) not null,
     tas_cam_fecha_hora_inicio timestamp not null,
     tas_cam_fecha_hora_fin timestamp,
     tas_cam_moneda varchar(50) not null   

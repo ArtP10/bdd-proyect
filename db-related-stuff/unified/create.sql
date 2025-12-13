@@ -79,7 +79,7 @@ create table plato(
 create table proveedor(
     prov_codigo serial primary key,
     prov_nombre varchar(100) not null,
-    prov_anos_servicio integer not null default 0,
+    prov_fecha_creacion date not null,
     prov_tipo varchar(50) not null,
     fk_lugar integer not null,
     fk_usu_codigo integer not null,

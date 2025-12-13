@@ -82,7 +82,7 @@ const form = reactive({
 });
 
 const goToRegister = () => {
-  router.push('/clients/register');
+  router.push('/client/register');
 };
 
 const handleLogin = async () => {

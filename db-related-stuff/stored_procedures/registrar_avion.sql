@@ -1,6 +1,6 @@
 CREATE OR REPLACE PROCEDURE sp_registrar_avion(
-    IN i_usu_codigo INTEGER,       -- Usuario que intenta la acción (para validar permisos)
-    IN i_pro_codigo INTEGER,       -- Proveedor dueño del avión
+    IN i_usu_codigo INTEGER,       
+    IN i_prov_codigo INTEGER,      
     IN i_capacidad INTEGER,
     IN i_descripcion TEXT,
     INOUT o_status_code INTEGER DEFAULT NULL,
@@ -9,7 +9,6 @@ CREATE OR REPLACE PROCEDURE sp_registrar_avion(
 LANGUAGE plpgsql AS $$
 DECLARE
     v_nuevo_cod INTEGER;
-    v_i INTEGER;
 BEGIN
     -- 1. Validar Privilegio 'crear_recursos'
     IF NOT EXISTS (
@@ -23,13 +22,13 @@ BEGIN
         RETURN;
     END IF;
 
-    -- 2. Insertar el Medio de Transporte (Tipo fijo 'Avion')
-    INSERT INTO medio_transporte (med_tra_capacidad, med_tra_descripcion, med_tra_tipo, fk_pro_codigo)
-    VALUES (i_capacidad, i_descripcion, 'Avion', i_pro_codigo)
+    -- 2. Insertar el Medio de Transporte
+    -- CORRECCIÓN: Cambiado fk_pro_codigo a fk_prov_codigo para coincidir con tu create.sql
+    INSERT INTO medio_transporte (med_tra_capacidad, med_tra_descripcion, med_tra_tipo, fk_prov_codigo)
+    VALUES (i_capacidad, i_descripcion, 'Avion', i_prov_codigo) 
     RETURNING med_tra_codigo INTO v_nuevo_cod;
 
-    -- 3. Generar los Puestos automáticamente (Loop del 1 a la capacidad)
-    -- Usamos generate_series para hacerlo en una sola instrucción eficiente
+    -- 3. Generar los Puestos automáticamente
     INSERT INTO puesto (fk_med_tra_codigo, pue_codigo, pue_descripcion, pue_costo_agregado)
     SELECT 
         v_nuevo_cod, 

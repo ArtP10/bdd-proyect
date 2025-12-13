@@ -1,5 +1,5 @@
 CREATE OR REPLACE PROCEDURE sp_obtener_terminales_compatibles(
-    IN i_usu_codigo INTEGER, -- Usamos el usuario para deducir el proveedor
+    IN i_usu_codigo INTEGER,
     INOUT o_cursor REFCURSOR DEFAULT NULL,
     INOUT o_status_code INTEGER DEFAULT NULL,
     INOUT o_mensaje VARCHAR DEFAULT NULL
@@ -7,10 +7,10 @@ CREATE OR REPLACE PROCEDURE sp_obtener_terminales_compatibles(
 LANGUAGE plpgsql AS $$
 DECLARE
     v_pro_tipo VARCHAR;
-    v_pro_codigo INTEGER;
+    v_prov_codigo INTEGER;
 BEGIN
-    -- 1. Obtener datos del proveedor
-    SELECT p.pro_tipo, p.pro_codigo INTO v_pro_tipo, v_pro_codigo
+    -- CORRECCIÓN: Usar prov_tipo y prov_codigo
+    SELECT p.prov_tipo, p.prov_codigo INTO v_pro_tipo, v_prov_codigo
     FROM proveedor p
     JOIN usuario u ON p.fk_usu_codigo = u.usu_codigo
     WHERE u.usu_codigo = i_usu_codigo;
@@ -21,7 +21,6 @@ BEGIN
         RETURN;
     END IF;
 
-    -- 2. Seleccionar terminales según la lógica de negocio
     OPEN o_cursor FOR
     SELECT 
         t.ter_codigo, 
@@ -34,7 +33,7 @@ BEGIN
         (v_pro_tipo = 'Aerolinea' AND t.ter_tipo = 'Aeropuerto') OR
         (v_pro_tipo = 'Maritimo' AND t.ter_tipo = 'Puerto') OR
         (v_pro_tipo = 'Terrestre' AND t.ter_tipo IN ('Terminal Terrestre', 'Estacion')) OR
-        (v_pro_tipo = 'Otros') -- 'Otros' puede ver todo
+        (v_pro_tipo = 'Otros') 
     ORDER BY p.lug_nombre, l.lug_nombre;
 
     o_status_code := 200;

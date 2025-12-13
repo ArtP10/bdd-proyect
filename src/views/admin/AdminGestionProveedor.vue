@@ -10,17 +10,17 @@
           <th>Nombre</th>
           <th>Tipo</th>
           <th>Lugar</th>
-          <th>Años Serv.</th>
-          <th>Usuario Admin</th>
+          <th>Fundación</th> <th>Antigüedad</th> <th>Usuario Admin</th>
           <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="p in providers" :key="p.pro_codigo">
-          <td>{{ p.pro_nombre }}</td>
-          <td><span class="badge">{{ p.pro_tipo }}</span></td>
+        <tr v-for="p in providers" :key="p.prov_codigo">
+          <td>{{ p.prov_nombre }}</td>
+          <td><span class="badge">{{ p.prov_tipo }}</span></td>
           <td>{{ p.lug_nombre }}</td>
-          <td>{{ p.pro_anos_servicio }}</td>
+          <td>{{ formatDate(p.prov_fecha_creacion) }}</td>
+          <td>{{ p.anos_antiguedad }} años</td>
           <td>{{ p.usu_nombre_usuario }}</td>
           <td>
             <button class="btn-sm">Editar</button>
@@ -41,18 +41,18 @@
                 <label>Nombre Proveedor</label>
                 <input v-model="form.pro_nombre" required />
             </div>
+            
             <div class="form-group">
-                <label>Años de Servicio</label>
-                <input type="number" v-model.number="form.pro_anos" required />
+                <label>Fecha de Creación / Fundación</label>
+                <input type="date" v-model="form.prov_fecha_creacion" required :max="todayDate" />
             </div>
+
             <div class="form-group">
                 <label>Tipo</label>
                 <select v-model="form.pro_tipo" required>
                     <option value="Aerolinea">Aerolinea</option>
                     <option value="Terrestre">Terrestre</option>
                     <option value="Maritimo">Maritimo</option>
-                    <option value="Hotel">Hotel</option>
-                    <option value="Agencia">Agencia</option>
                     <option value="Otros">Otros</option>
                 </select>
             </div>
@@ -60,13 +60,13 @@
                 <label>Lugar de Operación</label>
                 <select v-model="form.fk_lugar" required>
                     <option v-for="l in locations" :key="l.lug_codigo" :value="l.lug_codigo">
-                        {{ l.lug_nombre }} ({{ l.lug_tipo }})
+                        {{ l.lug_nombre }}
                     </option>
                 </select>
             </div>
           </div>
-
-          <div class="form-section">
+            
+           <div class="form-section">
             <h4>Cuenta de Acceso</h4>
             <div class="form-group">
                 <label>Usuario</label>
@@ -102,9 +102,17 @@ const showModal = ref(false);
 const userSession = JSON.parse(localStorage.getItem('user_session') || '{}');
 
 const form = reactive({
-    pro_nombre: '', pro_anos: 0, pro_tipo: 'Otros', fk_lugar: '',
+    pro_nombre: '', 
+    prov_fecha_creacion: '', // Variable cambiada a fecha
+    pro_tipo: 'Aerolinea', 
+    fk_lugar: '',
     usu_nombre: '', usu_email: '', usu_pass: ''
 });
+const todayDate = new Date().toISOString().split('T')[0];
+const formatDate = (dateString) => {
+    if(!dateString) return '';
+    return new Date(dateString).toLocaleDateString();
+};
 
 // --- API ---
 const fetchLocations = async () => {
@@ -137,7 +145,8 @@ const saveProvider = async () => {
             alert('Proveedor creado');
             showModal.value = false;
             fetchProviders();
-            // Reset form logic here
+            // Limpiar form
+            Object.assign(form, { pro_nombre: '', prov_fecha_creacion: '', pro_tipo: 'Aereolinea', fk_lugar: '', usu_nombre: '', usu_email: '', usu_pass: '' });
         } else {
             alert('Error: ' + data.message);
         }
@@ -145,7 +154,7 @@ const saveProvider = async () => {
 };
 
 const openCreateModal = () => {
-    fetchLocations(); // Cargar lugares al abrir el modal
+    fetchLocations();
     showModal.value = true;
 };
 

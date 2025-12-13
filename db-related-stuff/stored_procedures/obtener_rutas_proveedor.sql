@@ -6,9 +6,10 @@ CREATE OR REPLACE PROCEDURE sp_obtener_rutas_proveedor(
 )
 LANGUAGE plpgsql AS $$
 DECLARE
-    v_pro_id INTEGER;
+    v_prov_id INTEGER;
 BEGIN
-    SELECT pro_codigo INTO v_pro_id FROM proveedor WHERE fk_usu_codigo = i_usu_codigo;
+    -- CORRECCIÓN: Usar prov_codigo en lugar de pro_codigo
+    SELECT prov_codigo INTO v_prov_id FROM proveedor WHERE fk_usu_codigo = i_usu_codigo;
 
     OPEN o_cursor FOR
     SELECT 
@@ -21,10 +22,12 @@ BEGIN
     FROM ruta r
     JOIN terminal to1 ON r.fk_terminal_origen = to1.ter_codigo
     JOIN terminal td1 ON r.fk_terminal_destino = td1.ter_codigo
-    JOIN lugar l1 ON to1.fk_lug_codigo = l1.lug_codigo -- Lugar Origen
-    JOIN lugar l2 ON td1.fk_lug_codigo = l2.lug_codigo -- Lugar Destino
-    WHERE r.fk_pro_codigo = v_pro_id
+    JOIN lugar l1 ON to1.fk_lug_codigo = l1.lug_codigo 
+    JOIN lugar l2 ON td1.fk_lug_codigo = l2.lug_codigo 
+    WHERE r.fk_prov_codigo = v_prov_id -- CORRECCIÓN: Usar fk_prov_codigo
     ORDER BY r.rut_codigo DESC;
 
     o_status_code := 200; o_mensaje := 'Rutas obtenidas.';
+EXCEPTION WHEN OTHERS THEN
+    o_status_code := 500; o_mensaje := 'Error BD: ' || SQLERRM;
 END; $$;

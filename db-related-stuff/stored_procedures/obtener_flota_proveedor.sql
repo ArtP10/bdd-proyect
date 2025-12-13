@@ -1,5 +1,5 @@
 CREATE OR REPLACE PROCEDURE sp_obtener_flota_proveedor(
-    IN i_pro_codigo INTEGER,
+    IN i_prov_codigo INTEGER, -- CAMBIO: Nombre del parámetro actualizado
     INOUT o_cursor REFCURSOR DEFAULT NULL,
     INOUT o_status_code INTEGER DEFAULT NULL,
     INOUT o_mensaje VARCHAR DEFAULT NULL
@@ -14,25 +14,26 @@ BEGIN
         mt.med_tra_tipo,
         -- Lógica de Estado
         CASE 
-            -- Si existe un traslado ocurriendo AHORA MISMO
+            -- En Vuelo
             WHEN EXISTS (
                 SELECT 1 FROM traslado t 
                 WHERE t.fk_med_tra_codigo = mt.med_tra_codigo 
                 AND CURRENT_TIMESTAMP BETWEEN t.tras_fecha_hora_inicio AND t.tras_fecha_hora_fin
             ) THEN 'En Vuelo'
             
-            -- Si existe un traslado EN EL FUTURO (y no está volando ahora)
+            -- En Espera
             WHEN EXISTS (
                 SELECT 1 FROM traslado t 
                 WHERE t.fk_med_tra_codigo = mt.med_tra_codigo 
                 AND t.tras_fecha_hora_inicio > CURRENT_TIMESTAMP
             ) THEN 'En Espera'
             
-            -- Si no cumple ninguna, está inactivo
+            -- Inactivo
             ELSE 'Inactivo'
         END AS estado_actual
     FROM medio_transporte mt
-    WHERE mt.fk_pro_codigo = i_pro_codigo
+    -- CORRECCIÓN AQUÍ: Usamos fk_prov_codigo
+    WHERE mt.fk_prov_codigo = i_prov_codigo 
     ORDER BY mt.med_tra_codigo DESC;
 
     o_status_code := 200;

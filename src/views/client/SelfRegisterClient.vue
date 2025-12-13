@@ -7,7 +7,7 @@
       <form @submit.prevent="handleRegister">
         
         <div class="form-group">
-          <label for="reg-username">Nombre de Usuario</label>
+          <label for="reg-username">Nombre dsssse Usuario</label>
           <input 
             id="reg-username" 
             type="text" 

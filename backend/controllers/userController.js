@@ -324,13 +324,12 @@ const getProviders = async (req, res) => {
 };
 
 const createProvider = async (req, res) => {
-    // admin_id viene de la sesión actual
-    const { admin_id, pro_nombre, pro_anos, pro_tipo, fk_lugar, usu_nombre, usu_pass, usu_email } = req.body;
+    // Recibimos 'prov_fecha_creacion'
+    const { admin_id, pro_nombre, prov_fecha_creacion, pro_tipo, fk_lugar, usu_nombre, usu_pass, usu_email } = req.body;
     
     try {
-        /* Params: admin_id, nombre, anos, tipo, lugar, user, pass, email */
         const query = `CALL sp_registrar_proveedor($1, $2, $3, $4, $5, $6, $7, $8, NULL, NULL)`;
-        const values = [admin_id, pro_nombre, pro_anos, pro_tipo, fk_lugar, usu_nombre, usu_pass, usu_email];
+        const values = [admin_id, pro_nombre, prov_fecha_creacion, pro_tipo, fk_lugar, usu_nombre, usu_pass, usu_email];
         
         const result = await pool.query(query, values);
         const resp = result.rows[0];
@@ -346,11 +345,6 @@ const createProvider = async (req, res) => {
 };
 
 
-const _getProviderId = async (client, userId) => {
-    const res = await client.query('SELECT pro_codigo FROM proveedor WHERE fk_usu_codigo = $1', [userId]);
-    if (res.rows.length === 0) throw new Error('Usuario no es proveedor');
-    return res.rows[0].pro_codigo;
-};
 
 // 1. OBTENER FLOTA
 const getFleet = async (req, res) => {
@@ -383,24 +377,34 @@ const getFleet = async (req, res) => {
 };
 
 // 2. REGISTRAR AVIÓN
+const _getProviderId = async (client, userId) => {
+    // Usamos 'prov_codigo' (no pro_codigo)
+    const res = await client.query('SELECT prov_codigo FROM proveedor WHERE fk_usu_codigo = $1', [userId]);
+    if (res.rows.length === 0) throw new Error('Usuario no es proveedor');
+    return res.rows[0].prov_codigo;
+};
+
+// Actualiza también createPlane para que use nombres coherentes (opcional pero recomendado)
 const createPlane = async (req, res) => {
     const { user_id, capacidad, descripcion } = req.body;
     try {
-        // Necesitamos el pro_codigo para el insert
         const client = await pool.connect(); 
-        const pro_codigo = await _getProviderId(client, user_id);
+        
+        // 1. Obtener el prov_codigo a partir del user_id
+        // Asegúrate de que _getProviderId busque 'prov_codigo' y no 'pro_codigo'
+        const prov_codigo = await _getProviderId(client, user_id); 
         client.release();
 
+        // 2. Llamar al SP
         const query = `CALL sp_registrar_avion($1, $2, $3, $4, NULL, NULL)`;
-        const values = [user_id, pro_codigo, capacidad, descripcion];
+        const values = [user_id, prov_codigo, capacidad, descripcion];
         
-        const result = await pool.query(query, values);
+        const result = await pool.query(query, values);;
         const resp = result.rows[0];
         
         res.status(resp.o_status_code).json({ success: resp.o_status_code === 201, message: resp.o_mensaje });
     } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
 };
-
 // 3. MODIFICAR AVIÓN
 const updatePlane = async (req, res) => {
     const { user_id, med_tra_codigo, capacidad, descripcion } = req.body;

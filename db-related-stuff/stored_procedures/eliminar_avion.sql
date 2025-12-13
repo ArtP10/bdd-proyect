@@ -6,7 +6,7 @@ CREATE OR REPLACE PROCEDURE sp_eliminar_avion(
 )
 LANGUAGE plpgsql AS $$
 BEGIN
-    -- 1. Validar Privilegio 'eliminar_recursos'
+    
     IF NOT EXISTS (
         SELECT 1 FROM usuario u
         JOIN rol_privilegio rp ON u.fk_rol_codigo = rp.fk_rol_codigo
@@ -18,8 +18,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- 2. Validar si tiene traslados asociados (Integridad Referencial manual)
-    -- Aunque tengas FK, es mejor dar un mensaje amigable al usuario
+
     IF EXISTS (SELECT 1 FROM traslado WHERE fk_med_tra_codigo = i_med_tra_codigo) THEN
         o_status_code := 409; -- Conflict
         o_mensaje := 'No se puede eliminar: El avión tiene vuelos registrados (históricos o futuros).';

@@ -77,14 +77,14 @@ create table plato(
 	primary key (pla_codigo,fk_restaurante)
 );
 create table proveedor(
-    pro_codigo serial primary key,
-    pro_nombre varchar(100) not null,
-    pro_anos_servicio integer not null default 0,
-    pro_tipo varchar(50) not null,
+    prov_codigo serial primary key,
+    prov_nombre varchar(100) not null,
+    prov_anos_servicio integer not null default 0,
+    prov_tipo varchar(50) not null,
     fk_lugar integer not null,
     fk_usu_codigo integer not null,
     -- Constraints internos
-    CONSTRAINT check_tipo_proveedor CHECK(pro_tipo IN('Aereolinea', 'Terrestre', 'Maritimo', 'Otros'))
+    CONSTRAINT check_tipo_proveedor CHECK(prov_tipo IN('Aereolinea', 'Terrestre', 'Maritimo', 'Otros'))
 );
 
 create table nacionalidad(
@@ -148,11 +148,11 @@ CREATE table servicio(
 );
 
 create table promocion(
-    pro_codigo serial primary key,
-    pro_nombre varchar(50) not null,
-    pro_descripcion varchar(100),
-    pro_fecha_hora_vencimiento TIMESTAMP not null,
-    pro_descuento numeric(5,2) not null
+    prom_codigo serial primary key,
+    prom_nombre varchar(50) not null,
+    prom_descripcion varchar(100),
+    prom_fecha_hora_vencimiento TIMESTAMP not null,
+    prom_descuento numeric(5,2) not null
 );
 
 create Table paquete_turistico(
@@ -208,8 +208,7 @@ create table terminal(
     ter_codigo serial primary key,
     ter_nombre varchar(50) not null,
     fk_lugar integer not null,
-    ter_tipo varchar(50) not null,
-    constraint check_ter_tipo check(ter_tipo IN('Aeropuerto', 'Estacion Terrestre', 'Puerto Maritimo'))
+    ter_tipo varchar(50) not null
 );
 
 create table traslado(
@@ -243,8 +242,7 @@ create table medio_transporte(
     med_tra_capacidad integer not null,
     med_tra_descripcion varchar(100) not null,
     med_tra_tipo varchar(50) not null,
-    fk_prov_codigo integer not null,
-    constraint check_med_tra_tipo check(med_tra_tipo IN('Avion', 'Bus', 'Barco', 'Otros'))
+    fk_prov_codigo integer not null
 );
 
 CREATE Table puesto(

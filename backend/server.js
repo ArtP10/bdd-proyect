@@ -5,6 +5,7 @@ const bodyParser = require('body-parser');
 
 
 const userRoutes = require('./routes/userRoutes');
+const homRoutes = require('./routes/homeRoutes');
 //Aqui agregaremos el resto de rutas que corresponden al resto de controladores
 //Puede haber un controlador para aerolineas, cruceros, paquetes, servicios, etc
 
@@ -16,6 +17,7 @@ app.use(bodyParser.json());
 
 //Esto lo hacemos con cada ruta que creemos para que el backend lo use
 app.use('/api/users', userRoutes);
+app.use('/api/home',  homRoutes);
 
 app.listen(port, () => {
   console.log(`Backend running on http://localhost:${port}`);

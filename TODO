@@ -7,3 +7,6 @@
 - Agregar sp's para eliminar viajeros desde vista del cliente
 - ver que cdlm se hace con la descripcion y monto agreagao de los puestos en med transporte
 - Agregar logica para puestos ocupados en aviones - un puesto esta ocupado si esta presente en la tabla muchos a muchos de un traslado en curso
+- Se debe implementar el borrado de traslados?
+- Agregar default para fk lugar
+- Agregar CRUD de lugares desde el adminsitradors

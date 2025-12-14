@@ -9,6 +9,8 @@ const paqTurRoutes = require('./routes/paq_turRoutes');
 const homRoutes = require('./routes/homeRoutes');
 
 
+const reportRoutes = require('./routes/reportRoutes');
+
 const app = express();
 const port = 3000;
 
@@ -21,6 +23,8 @@ app.use('/api/home',  homRoutes);
 // --- NUEVA LÍNEA: Usar rutas de paquetes ---
 // Los endpoints quedarán tipo: http://localhost:3000/api/packages/create
 app.use('/api', paqTurRoutes); 
+
+app.use('/api', reportRoutes); // Integrar rutas de reportes
 
 app.listen(port, () => {
   console.log(`Backend running on http://localhost:${port}`);

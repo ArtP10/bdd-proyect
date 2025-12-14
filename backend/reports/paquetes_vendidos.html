@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        h1 { color: #333; }
+        .total { font-weight: bold; text-align: right; }
+    </style>
+</head>
+<body>
+    <h1>Reporte de Paquetes Turísticos Vendidos por Componente</h1>
+    <p>Fecha de generación: {{now}}</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Fecha Venta</th>
+                <th>Nombre Paquete</th>
+                <th>Costo Total</th>
+                <th>Componentes Incluidos</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#each reportData}}
+            <tr>
+                <td>{{fecha_venta}}</td>
+                <td>{{nombre_paquete}}</td>
+                <td>{{costo_total}}</td>
+                <td>{{componentes_incluidos}}</td>
+            </tr>
+            {{/each}}
+        </tbody>
+    </table>
+</body>
+</html>

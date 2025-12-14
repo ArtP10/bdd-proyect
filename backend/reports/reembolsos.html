@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        h1 { color: #333; }
+        .correct { color: green; font-weight: bold; }
+        .incorrect { color: red; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Lista de Reembolsos Automáticos Procesados</h1>
+    <p>Fecha de generación: {{now}}</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Código Reembolso</th>
+                <th>Fecha Compra</th>
+                <th>Monto Reembolsado</th>
+                <th>Monto Retenido (10%)</th>
+                <th>Monto Original</th>
+                <th>Validación</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#each reportData}}
+            <tr>
+                <td>{{rem_codigo}}</td>
+                <td>{{com_fecha}}</td>
+                <td>{{rem_monto_reembolsado}}</td>
+                <td>{{rem_monto_retenido}}</td>
+                <td>{{monto_original}}</td>
+                <td class="{{#if (eq validacion_regla 'CORRECTO (10%)')}}correct{{else}}incorrect{{/if}}">
+                    {{validacion_regla}}
+                </td>
+            </tr>
+            {{/each}}
+        </tbody>
+    </table>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        h1 { color: #333; }
+        .details { font-size: 0.9em; color: #555; }
+    </style>
+</head>
+<body>
+    <h1>Canje de Paquetes por Millas (Top 5)</h1>
+    <p>Fecha de generación: {{now}}</p>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Paquete</th>
+                <th>Costo en Millas</th>
+                <th>Fecha Canje</th>
+                <th>Detalle del Contenido</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#each reportData}}
+            <tr>
+                <td>{{paq_tur_nombre}}</td>
+                <td>{{paq_tur_costo_en_millas}}</td>
+                <td>{{com_fecha}}</td>
+                <td class="details">
+                    <strong>Servicios:</strong> {{servicios}}<br>
+                    <strong>Traslados:</strong> {{traslados}}<br>
+                    <strong>Hoteles:</strong> {{reservas_hoteles}}<br>
+                    <strong>Restaurantes:</strong> {{reservas_restaurantes}}
+                </td>
+            </tr>
+            {{/each}}
+        </tbody>
+    </table>
+</body>
+</html>

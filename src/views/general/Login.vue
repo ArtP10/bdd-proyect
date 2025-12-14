@@ -86,65 +86,45 @@ const goToRegister = () => {
 };
 
 const handleLogin = async () => {
-  isLoading.value = true;
-  errorMessage.value = '';
+    try {
+        const response = await fetch('http://localhost:3000/api/users/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            // CORRECCIÓN AQUÍ:
+            body: JSON.stringify({ 
+                username: form.user_name,     // Usar la variable correcta del v-model
+                password: form.user_password  // Usar la variable correcta del v-model
+            })
+        });
+        const data = await response.json();
 
-  try {
-    const response = await fetch('http://localhost:3000/api/users/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        p_search_name: form.user_name,
-        p_search_pass: form.user_password,
-        p_search_type: form.user_type
-      }),
-    });
+        if (data.success) {
+            // Guardar sesión
+            localStorage.setItem('user_session', JSON.stringify(data.user));
 
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || 'Error de autenticación');
+            // LÓGICA DE REDIRECCIÓN
+            if (data.user.role === 'Administrador') {
+                router.push('/admin/dashboard');
+            } 
+            else if (data.user.role === 'Proveedor') {
+                // Validamos si es Aerolínea
+                // Nota: Tu BD usa 'Aerolinea' (sin tilde) según los inserts
+                if (data.user.provider_type === 'Aerolinea') {
+                    router.push('/provider/dashboard'); // Va al Dashboard de Aerolínea
+                } else {
+                    router.push('/not-developed'); // Va a la pantalla de "En construcción"
+                }
+            } 
+            else if (data.user.role === 'Cliente') {
+                router.push('/home');
+            }
+        } else {
+            alert(data.message);
+        }
+    } catch (error) {
+        console.error(error);
+        alert('Error de conexión');
     }
-
-    // 1. Guardar sesión
-    localStorage.setItem('user_session', JSON.stringify({
-      user_id: data.data.user_id,
-      user_name: data.data.user_name,
-      user_role: data.data.user_role,
-      user_correo: data.data.user_correo,
-      privileges: data.data.privileges 
-    }));
-
-    // 2. Redirección inteligente basada en el Rol devuelto por BD
-    const role = data.data.user_role;
-
-    switch (role) {
-      case 'Cliente':
-        router.push('/client/dashboard');
-        break;
-      
-      case 'Administrador':
-        router.push('/admin/dashboard');
-        break;
-      
-      case 'Proveedor':
-        // Asumiendo que vamos al dashboard de aerolíneas que mencionaste
-        router.push('/providers/airlines/dashboard'); 
-        break;
-        
-      default:
-        console.warn('Rol desconocido:', role);
-        alert('Rol no reconocido por el sistema.');
-    }
-
-  } catch (error) {
-    errorMessage.value = error.message;
-    console.error('Login error:', error);
-  } finally {
-    isLoading.value = false;
-  }
 };
 </script>
 

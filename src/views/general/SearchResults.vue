@@ -72,8 +72,8 @@
               <span class="amount">{{ item.precio }}</span>
             </div>
             <div class="actions">
-              <button class="btn btn-primary btn-block">Seleccionar</button>
-              <button class="btn btn-outline btn-block">Ver detalles</button>
+              <button class="btn btn-primary btn-block" @click="handleItemSelection(item)">Seleccionar</button>
+              <button class="btn btn-outline btn-block" @click="handleItemSelection(item)">Ver detalles</button>
             </div>
           </div>
 
@@ -81,16 +81,33 @@
       </div>
 
     </div>
+
+    <div v-if="showLoginModal" class="modal-overlay">
+      <div class="modal-content">
+        <div class="modal-icon">
+            <i class="fa-solid fa-user-lock"></i>
+        </div>
+        <h3>Acceso Requerido</h3>
+        <p>Inicie sesión como cliente para comenzar a agregar cosas a su carrito.</p>
+        <div class="modal-actions">
+          <button class="btn btn-outline" @click="closeModal">Cancelar</button>
+          <button class="btn btn-primary" @click="goToLogin">Continuar</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router'; // Agregar useRouter
 
 const route = useRoute();
+const router = useRouter(); // Instanciar router
 const results = ref([]);
 const loading = ref(true);
+const showLoginModal = ref(false);
 
 onMounted(async () => {
   await fetchResults();
@@ -99,7 +116,6 @@ onMounted(async () => {
 const fetchResults = async () => {
   loading.value = true;
   try {
-    // Tomamos los query params de la URL y los enviamos al backend
     const searchParams = {
       origen: route.query.origen,
       destino: route.query.destino,
@@ -124,8 +140,29 @@ const fetchResults = async () => {
   }
 };
 
-// --- Helpers de Formato y Estilo ---
+// --- LÓGICA DE SELECCIÓN Y AUTENTICACIÓN ---
+const handleItemSelection = (item) => {
+    // Validar usuario cliente
+    const userRole = localStorage.getItem('userRole'); 
 
+    if (userRole === 'Cliente') {
+        router.push('/client/cart');
+    } else {
+        showLoginModal.value = true;
+    }
+};
+
+const closeModal = () => {
+    showLoginModal.value = false;
+};
+
+const goToLogin = () => {
+    showLoginModal.value = false;
+    router.push('/login');
+};
+// --------------------------------------------
+
+// --- Helpers de Formato y Estilo ---
 const getIconClass = (subtipo) => {
   if (!subtipo) return 'fa-solid fa-star';
   const t = subtipo.toLowerCase();
@@ -151,7 +188,8 @@ const formatTime = (dateString) => {
 </script>
 
 <style scoped>
-/* --- ESTILOS GENERALES (Coherentes con HomePage) --- */
+/* ESTILOS PREVIOS SE MANTIENEN IGUAL... */
+
 .results-container {
   background-color: #F5F7FA;
   min-height: 100vh;
@@ -165,7 +203,6 @@ const formatTime = (dateString) => {
   padding: 0 20px;
 }
 
-/* --- HEADER --- */
 .results-header {
   background: white;
   box-shadow: 0 2px 10px rgba(0,0,0,0.05);
@@ -173,60 +210,16 @@ const formatTime = (dateString) => {
   margin-bottom: 2rem;
 }
 
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
+.header-content { display: flex; justify-content: space-between; align-items: center; }
+.logo-area { font-size: 1.4rem; font-weight: 800; color: #00BCD4; cursor: pointer; }
+.search-summary { display: flex; gap: 10px; }
+.summary-pill { background: #E0F7FA; color: #00838F; padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; }
 
-.logo-area {
-  font-size: 1.4rem;
-  font-weight: 800;
-  color: #00BCD4; /* Cyan */
-  cursor: pointer;
-}
+.results-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+.results-top-bar h2 { font-size: 1.5rem; color: #2c3e50; margin: 0; }
+.count-badge { color: #666; font-size: 0.9rem; }
 
-.search-summary {
-  display: flex;
-  gap: 10px;
-}
-
-.summary-pill {
-  background: #E0F7FA;
-  color: #00838F;
-  padding: 5px 15px;
-  border-radius: 20px;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-/* --- TÍTULO --- */
-.results-top-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-}
-
-.results-top-bar h2 {
-  font-size: 1.5rem;
-  color: #2c3e50;
-  margin: 0;
-}
-
-.count-badge {
-  color: #666;
-  font-size: 0.9rem;
-}
-
-/* --- TARJETAS DE RESULTADOS (Layout tipo Avianca/Expedia) --- */
-.cards-list {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding-bottom: 40px;
-}
-
+.cards-list { display: flex; flex-direction: column; gap: 20px; padding-bottom: 40px; }
 .result-card {
   background: white;
   border-radius: 12px;
@@ -236,197 +229,81 @@ const formatTime = (dateString) => {
   transition: transform 0.2s, box-shadow 0.2s;
   border: 1px solid transparent;
 }
+.result-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); border-color: #E0F7FA; }
 
-.result-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0,0,0,0.08);
-  border-color: #E0F7FA;
-}
+.card-left { width: 120px; display: flex; align-items: center; justify-content: center; border-right: 1px solid #f0f0f0; padding-right: 20px; margin-right: 20px; }
+.img-placeholder { width: 80px; height: 80px; background-color: #f5f5f5; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #E91E63; }
 
-/* Izquierda: Imagen/Icono */
-.card-left {
-  width: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-right: 1px solid #f0f0f0;
-  padding-right: 20px;
-  margin-right: 20px;
-}
+.card-center { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.card-tag { display: inline-block; background: #FCE4EC; color: #C2185B; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; width: fit-content; margin-bottom: 5px; font-weight: 700; text-transform: uppercase; }
+.card-title { font-size: 1.2rem; font-weight: 700; margin: 0 0 5px 0; color: #333; }
+.location-detail { color: #666; font-size: 0.95rem; margin-bottom: 10px; }
+.time-info { display: flex; gap: 20px; }
+.time-block .label { display: block; font-size: 0.75rem; color: #999; text-transform: uppercase; }
+.time-block .value { font-weight: 600; color: #333; }
 
-.img-placeholder {
-  width: 80px;
-  height: 80px;
-  background-color: #f5f5f5;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 2rem;
-  color: #E91E63; /* Pink */
-}
+.card-right { width: 180px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; padding-left: 20px; border-left: 1px solid #f0f0f0; }
+.price-container { text-align: right; }
+.currency { font-size: 0.9rem; font-weight: 600; color: #666; margin-right: 2px; }
+.amount { font-size: 1.8rem; font-weight: 800; color: #E91E63; }
+.actions { width: 100%; display: flex; flex-direction: column; gap: 8px; }
 
-/* Centro: Información */
-.card-center {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
+.btn { padding: 8px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }
+.btn-block { width: 100%; }
+.btn-primary { background-color: #E91E63; color: white; }
+.btn-primary:hover { background-color: #D81B60; }
+.btn-outline { background-color: transparent; border: 1px solid #00BCD4; color: #00BCD4; }
+.btn-outline:hover { background-color: #E0F7FA; }
 
-.card-tag {
-  display: inline-block;
-  background: #FCE4EC; /* Rosa claro */
-  color: #C2185B;
-  font-size: 0.75rem;
-  padding: 2px 8px;
-  border-radius: 4px;
-  width: fit-content;
-  margin-bottom: 5px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
+.loading-state, .no-results { text-align: center; padding: 4rem; color: #888; }
+.loading-state i { color: #00BCD4; margin-right: 10px; }
+.no-results button { margin-top: 1rem; }
 
-.card-title {
-  font-size: 1.2rem;
-  font-weight: 700;
-  margin: 0 0 5px 0;
-  color: #333;
-}
-
-.location-detail {
-  color: #666;
-  font-size: 0.95rem;
-  margin-bottom: 10px;
-}
-
-.time-info {
-  display: flex;
-  gap: 20px;
-}
-
-.time-block .label {
-  display: block;
-  font-size: 0.75rem;
-  color: #999;
-  text-transform: uppercase;
-}
-.time-block .value {
-  font-weight: 600;
-  color: #333;
-}
-
-/* Derecha: Precio y Botones */
-.card-right {
-  width: 180px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: flex-end;
-  padding-left: 20px;
-  border-left: 1px solid #f0f0f0;
-}
-
-.price-container {
-  text-align: right;
-}
-
-.currency {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #666;
-  margin-right: 2px;
-}
-
-.amount {
-  font-size: 1.8rem;
-  font-weight: 800;
-  color: #E91E63; /* Precio en Rosa */
-}
-
-.actions {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* Botones */
-.btn {
-  padding: 8px 16px;
-  border-radius: 6px;
-  border: none;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-size: 0.9rem;
-}
-
-.btn-block {
-  width: 100%;
-}
-
-/* Botón "Seleccionar" (Rosa lleno) */
-.btn-primary {
-  background-color: #E91E63;
-  color: white;
-}
-.btn-primary:hover {
-  background-color: #D81B60;
-}
-
-/* Botón "Ver detalles" (Outline Cyan) */
-.btn-outline {
-  background-color: transparent;
-  border: 1px solid #00BCD4;
-  color: #00BCD4;
-}
-.btn-outline:hover {
-  background-color: #E0F7FA;
-}
-
-/* Loading & Empty States */
-.loading-state, .no-results {
-  text-align: center;
-  padding: 4rem;
-  color: #888;
-}
-.loading-state i {
-  color: #00BCD4;
-  margin-right: 10px;
-}
-.no-results button {
-  margin-top: 1rem;
-}
-
-/* Responsividad simple */
 @media (max-width: 768px) {
-  .result-card {
-    flex-direction: column;
-    text-align: center;
-  }
-  .card-left, .card-right {
-    width: 100%;
-    border: none;
-    padding: 0;
-    margin: 0;
-  }
-  .card-left {
-    margin-bottom: 15px;
-    justify-content: center;
-  }
-  .card-right {
-    margin-top: 15px;
-    align-items: center;
-  }
-  .actions {
-    margin-top: 10px;
-  }
-  .time-info {
-    justify-content: center;
-  }
-  .card-tag {
-    margin: 0 auto 5px auto;
-  }
+  .result-card { flex-direction: column; text-align: center; }
+  .card-left, .card-right { width: 100%; border: none; padding: 0; margin: 0; }
+  .card-left { margin-bottom: 15px; justify-content: center; }
+  .card-right { margin-top: 15px; align-items: center; }
+  .actions { margin-top: 10px; }
+  .time-info { justify-content: center; }
+  .card-tag { margin: 0 auto 5px auto; }
+}
+
+/* --- ESTILOS DEL MODAL --- */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: white;
+  padding: 2rem;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+  animation: modalPop 0.3s ease-out;
+}
+
+.modal-icon { font-size: 3rem; color: #E91E63; margin-bottom: 1rem; }
+.modal-content h3 { margin: 0 0 0.5rem 0; color: #333; }
+.modal-content p { color: #666; margin-bottom: 2rem; line-height: 1.5; }
+
+.modal-actions { display: flex; gap: 10px; justify-content: center; }
+.modal-actions .btn { flex: 1; }
+
+@keyframes modalPop {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
 }
 </style>

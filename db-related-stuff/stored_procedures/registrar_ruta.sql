@@ -1,8 +1,9 @@
 CREATE OR REPLACE PROCEDURE sp_registrar_ruta(
     IN i_usu_codigo INTEGER,
     IN i_costo NUMERIC,
-    IN i_millas INTEGER,      -- Ajustado a INTEGER según tu tabla
+    IN i_millas INTEGER,
     IN i_rut_tipo VARCHAR, 
+    IN i_rut_descripcion VARCHAR, -- NUEVO PARÁMETRO
     IN i_fk_origen INTEGER,
     IN i_fk_destino INTEGER,
     INOUT o_status_code INTEGER DEFAULT NULL,
@@ -50,9 +51,9 @@ BEGIN
         o_status_code := 409; o_mensaje := 'Proveedor Terrestre solo opera en Terminales o Estaciones.'; RETURN;
     END IF;
 
-    -- F. Insertar
-    INSERT INTO ruta (rut_costo, rut_millas_otorgadas, rut_tipo, fk_terminal_origen, fk_terminal_destino, fk_prov_codigo)
-    VALUES (i_costo, i_millas, i_rut_tipo, i_fk_origen, i_fk_destino, v_prov_id);
+    -- F. Insertar (Ahora incluye rut_descripcion)
+    INSERT INTO ruta (rut_costo, rut_millas_otorgadas, rut_tipo, rut_descripcion, fk_terminal_origen, fk_terminal_destino, fk_prov_codigo)
+    VALUES (i_costo, i_millas, i_rut_tipo, i_rut_descripcion, i_fk_origen, i_fk_destino, v_prov_id);
 
     o_status_code := 201;
     o_mensaje := 'Ruta creada exitosamente.';

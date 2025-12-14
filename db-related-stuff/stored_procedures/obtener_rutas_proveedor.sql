@@ -1,3 +1,4 @@
+-- Actualizamos el SP para que devuelva 'rut_descripcion'
 CREATE OR REPLACE PROCEDURE sp_obtener_rutas_proveedor(
     IN i_usu_codigo INTEGER,
     INOUT o_cursor REFCURSOR DEFAULT NULL,
@@ -16,6 +17,7 @@ BEGIN
         r.rut_costo,
         r.rut_millas_otorgadas,
         r.rut_tipo,
+        r.rut_descripcion, -- <--- AGREGADO AQUÍ
         (to1.ter_nombre || ' (' || l1.lug_nombre || ')') as origen_nombre,
         (td1.ter_nombre || ' (' || l2.lug_nombre || ')') as destino_nombre
     FROM ruta r

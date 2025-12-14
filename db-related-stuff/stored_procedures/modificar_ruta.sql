@@ -3,6 +3,7 @@ CREATE OR REPLACE PROCEDURE sp_modificar_ruta(
     IN i_rut_codigo INTEGER,
     IN i_nuevo_costo NUMERIC,
     IN i_nuevas_millas INTEGER,
+    IN i_nueva_descripcion VARCHAR, -- Nuevo parámetro
     INOUT o_status_code INTEGER DEFAULT NULL,
     INOUT o_mensaje VARCHAR DEFAULT NULL
 )
@@ -11,7 +12,7 @@ DECLARE
     v_prov_id INTEGER;
     v_rut_prov_id INTEGER;
 BEGIN
-    -- Validar Permisos
+    -- Validaciones (igual que antes)
     IF NOT EXISTS (
         SELECT 1 FROM usuario u JOIN rol_privilegio rp ON u.fk_rol_codigo = rp.fk_rol_codigo
         JOIN privilegio p ON rp.fk_pri_codigo = p.pri_codigo
@@ -20,7 +21,6 @@ BEGIN
         o_status_code := 403; o_mensaje := 'No tiene permisos para modificar rutas.'; RETURN;
     END IF;
 
-    -- Validar Propiedad
     SELECT prov_codigo INTO v_prov_id FROM proveedor WHERE fk_usu_codigo = i_usu_codigo;
     SELECT fk_prov_codigo INTO v_rut_prov_id FROM ruta WHERE rut_codigo = i_rut_codigo;
 
@@ -31,7 +31,8 @@ BEGIN
     -- Actualizar
     UPDATE ruta
     SET rut_costo = i_nuevo_costo,
-        rut_millas_otorgadas = i_nuevas_millas
+        rut_millas_otorgadas = i_nuevas_millas,
+        rut_descripcion = i_nueva_descripcion -- Actualizamos descripción
     WHERE rut_codigo = i_rut_codigo;
 
     o_status_code := 200; o_mensaje := 'Ruta actualizada correctamente.';

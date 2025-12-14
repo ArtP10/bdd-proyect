@@ -473,11 +473,12 @@ const getCompatibleTerminals = async (req, res) => {
 
 // 3. Crear Ruta
 const createRoute = async (req, res) => {
-    // Recibimos rut_tipo
-    const { user_id, costo, millas, rut_tipo, fk_origen, fk_destino } = req.body;
+    // Recibimos rut_descripcion
+    const { user_id, costo, millas, rut_tipo, rut_descripcion, fk_origen, fk_destino } = req.body;
     try {
-        const query = `CALL sp_registrar_ruta($1, $2, $3, $4, $5, $6, NULL, NULL)`;
-        const values = [user_id, costo, millas, rut_tipo, fk_origen, fk_destino];
+        // Ajustamos la llamada al SP para incluir el nuevo parámetro (ahora son 9 argumentos contando los INOUT)
+        const query = `CALL sp_registrar_ruta($1, $2, $3, $4, $5, $6, $7, NULL, NULL)`;
+        const values = [user_id, costo, millas, rut_tipo, rut_descripcion, fk_origen, fk_destino];
         
         const result = await pool.query(query, values);
         const resp = result.rows[0];
@@ -508,16 +509,17 @@ const getRoutes = async (req, res) => {
     } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
 };
 
-// UPDATE (Nuevo)
 const updateRoute = async (req, res) => {
-    const { user_id, rut_codigo, costo, millas } = req.body;
+    // Recibir rut_descripcion
+    const { user_id, rut_codigo, costo, millas, rut_descripcion } = req.body;
     try {
-        const query = `CALL sp_modificar_ruta($1, $2, $3, $4, NULL, NULL)`;
-        const result = await pool.query(query, [user_id, rut_codigo, costo, millas]);
+        // Ajustar llamada al SP (ahora recibe descripción)
+        const query = `CALL sp_modificar_ruta($1, $2, $3, $4, $5, NULL, NULL)`;
+        const result = await pool.query(query, [user_id, rut_codigo, costo, millas, rut_descripcion]);
         const resp = result.rows[0];
         res.status(resp.o_status_code).json({ success: resp.o_status_code === 200, message: resp.o_mensaje });
     } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
-};
+};;
 
 // DELETE (Nuevo)
 const deleteRoute = async (req, res) => {

@@ -14,13 +14,13 @@ BEGIN
     RETURN QUERY
     SELECT 
         t.tras_codigo,
-        (lug_o.lug_nombre || ' - ' || lug_d.lug_nombre)::VARCHAR as titulo,
+        (lug_o.lug_nombre || ' - ' || lug_d.lug_nombre)::VARCHAR,
         mt.med_tra_descripcion::VARCHAR,
         t.tras_fecha_hora_inicio,
         r.rut_tipo::VARCHAR,
-        lug_o.lug_nombre::VARCHAR as origen,
-        lug_d.lug_nombre::VARCHAR as destino,
-        r.rut_costo as precio,
+        lug_o.lug_nombre::VARCHAR,
+        lug_d.lug_nombre::VARCHAR,
+        r.rut_costo,
         COUNT(dr.fk_compra) as ventas
     FROM traslado t
     JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo
@@ -30,7 +30,6 @@ BEGIN
     JOIN lugar lug_d ON ter_d.fk_lugar = lug_d.lug_codigo
     JOIN medio_transporte mt ON t.fk_med_tra_codigo = mt.med_tra_codigo
     JOIN pue_tras pt ON pt.fk_tras_codigo = t.tras_codigo
-    -- Join complejo para contar asientos ocupados en cualquiera de las FKs de reserva
     LEFT JOIN detalle_reserva dr ON (dr.fk_pue_tras = pt.pue_tras_codigo OR dr.fk_pue_tras1 = pt.pue_tras_codigo OR dr.fk_pue_tras2 = pt.pue_tras_codigo)
     WHERE t.tras_fecha_hora_fin > NOW()
     GROUP BY 

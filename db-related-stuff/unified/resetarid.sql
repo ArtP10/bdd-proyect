@@ -1,0 +1,1 @@
+ALTER SEQUENCE rol_rol_codigo_seq RESTART WITH 1;

@@ -17,9 +17,9 @@ BEGIN
         s.ser_nombre::VARCHAR,
         s.ser_descripcion::VARCHAR,
         s.ser_fecha_hora_inicio,
-        'Servicio'::VARCHAR as tipo,
-        s.ser_tipo::VARCHAR as subtipo,
-        l.lug_nombre::VARCHAR as lugar,
+        'Servicio'::VARCHAR,
+        s.ser_tipo::VARCHAR,
+        l.lug_nombre::VARCHAR,
         s.ser_costo,
         COUNT(dr.fk_compra) as ventas
     FROM servicio s

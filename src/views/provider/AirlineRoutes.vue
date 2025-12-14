@@ -10,8 +10,8 @@
       <thead>
         <tr>
           <th>ID</th>
-          <th>Tipo</th>
-          <th>Origen</th>
+          <th>Transporte</th>
+          <th>Enfoque</th> <th>Origen</th>
           <th>Destino</th>
           <th>Costo ($)</th>
           <th>Millas</th>
@@ -21,7 +21,19 @@
       <tbody>
         <tr v-for="route in routes" :key="route.rut_codigo">
           <td>#{{ route.rut_codigo }}</td>
-          <td><span class="badge">{{ route.rut_tipo }}</span></td>
+          
+          <td>
+            <span class="type-icon">
+                <i class="fa-solid fa-plane-up"></i> {{ route.rut_tipo }}
+            </span>
+          </td>
+
+          <td>
+            <span :class="['badge', getBadgeClass(route.rut_descripcion)]">
+                {{ route.rut_descripcion || 'General' }}
+            </span>
+          </td>
+
           <td class="font-bold">{{ route.origen_nombre }}</td>
           <td class="font-bold">{{ route.destino_nombre }}</td>
           <td>${{ route.rut_costo }}</td>
@@ -32,7 +44,7 @@
           </td>
         </tr>
         <tr v-if="routes.length === 0">
-            <td colspan="7" class="empty-cell">No hay rutas registradas.</td>
+            <td colspan="8" class="empty-cell">No hay rutas registradas.</td>
         </tr>
       </tbody>
     </table>
@@ -42,6 +54,18 @@
         <h3>{{ isEditing ? 'Modificar Ruta' : 'Crear Nueva Ruta' }}</h3>
         <form @submit.prevent="saveRoute">
           
+          <div class="form-group">
+            <label>Enfoque de la Ruta</label>
+            <select v-model="form.rut_descripcion" required :disabled="isEditing">
+                <option value="" disabled>Seleccione una opción</option>
+                <option value="Familiar">Familiar</option>
+                <option value="Corporativo">Corporativo</option>
+                <option value="Explorador">Explorador</option>
+                <option value="Practico">Práctico</option>
+                <option value="Comfort">Comfort</option>
+            </select>
+          </div>
+
           <div class="form-group">
             <label>Terminal Origen</label>
             <select v-model="form.fk_origen" required :disabled="isEditing">
@@ -92,26 +116,37 @@ import { ref, reactive, computed, onMounted } from 'vue';
 const routes = ref([]);
 const terminals = ref([]);
 const showModal = ref(false);
-const isEditing = ref(false); // Estado para saber si editamos
+const isEditing = ref(false);
 const userSession = JSON.parse(localStorage.getItem('user_session') || '{}');
 
 const form = reactive({
     rut_codigo: null,
     fk_origen: '',
     fk_destino: '',
+    rut_descripcion: '', 
     costo: 0,
     millas: 0,
-    rut_tipo: 'Aerea' // Valor por defecto
+    rut_tipo: 'Aerea'
 });
 
-// Computed para filtrar destinos disponibles (solo visual, al crear)
 const filteredDestinals = computed(() => {
     if (!form.fk_origen) return terminals.value;
     return terminals.value.filter(t => t.ter_codigo !== form.fk_origen);
 });
 
-// --- API Calls ---
+// Función para asignar colores según el tipo
+const getBadgeClass = (desc) => {
+    const map = {
+        'Familiar': 'badge-orange',
+        'Corporativo': 'badge-blue',
+        'Explorador': 'badge-green',
+        'Practico': 'badge-gray',
+        'Comfort': 'badge-purple'
+    };
+    return map[desc] || 'badge-gray';
+};
 
+// --- API Calls ---
 const fetchTerminals = async () => {
     try {
         const res = await fetch('http://localhost:3000/api/users/providers/routes/terminals', {
@@ -133,7 +168,6 @@ const fetchRoutes = async () => {
 };
 
 const saveRoute = async () => {
-    // Validación básica solo al crear
     if (!isEditing.value && form.fk_origen === form.fk_destino) {
         alert("El origen y el destino no pueden ser iguales");
         return;
@@ -141,23 +175,26 @@ const saveRoute = async () => {
 
     try {
         let url = 'http://localhost:3000/api/users/providers/routes/create';
+        // Payload para CREAR (Incluye descripción)
         let payload = { 
             user_id: userSession.user_id,
             fk_origen: form.fk_origen,
             fk_destino: form.fk_destino,
             costo: form.costo,
             millas: form.millas,
-            rut_tipo: 'Aerea' // Hardcoded por ahora, o puedes poner un select
+            rut_tipo: 'Aerea',
+            rut_descripcion: form.rut_descripcion 
         };
 
         if (isEditing.value) {
             url = 'http://localhost:3000/api/users/providers/routes/update';
-            // Al editar solo mandamos ID, costo y millas
+            // Payload para EDITAR (Ahora incluimos descripción también por si quieres permitir cambiarla)
             payload = {
                 user_id: userSession.user_id,
                 rut_codigo: form.rut_codigo,
                 costo: form.costo,
-                millas: form.millas
+                millas: form.millas,
+                rut_descripcion: form.rut_descripcion // Agregado para permitir update
             };
         }
 
@@ -180,7 +217,6 @@ const saveRoute = async () => {
 
 const deleteRoute = async (id) => {
     if(!confirm('¿Seguro que desea eliminar esta ruta? Solo es posible si no hay vuelos activos.')) return;
-    
     try {
         const res = await fetch('http://localhost:3000/api/users/providers/routes/delete', {
             method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -198,29 +234,23 @@ const deleteRoute = async (id) => {
 
 // --- Modal Logic ---
 const openCreateModal = () => {
-    fetchTerminals(); // Cargar terminales solo cuando se abre
+    fetchTerminals();
     isEditing.value = false;
     form.rut_codigo = null;
     form.fk_origen = '';
     form.fk_destino = '';
+    form.rut_descripcion = ''; 
     form.costo = 0;
     form.millas = 0;
     showModal.value = true;
 };
 
 const openEditModal = (route) => {
-    // Al editar, NO cargamos terminales (porque no se pueden cambiar)
     isEditing.value = true;
     form.rut_codigo = route.rut_codigo;
     form.costo = route.rut_costo;
     form.millas = route.rut_millas_otorgadas;
-    
-    // Estos campos se usan solo visualmente en el modal (estarán disabled)
-    // No tenemos los IDs de terminales en la tabla 'routes' (solo nombres), 
-    // así que si quieres que el select muestre el valor correcto visualmente, 
-    // deberías cargar fetchTerminals() y buscar los IDs. 
-    // O simplemente mostrar un texto estático si isEditing es true.
-    // Por simplicidad, aquí los selects aparecerán vacíos o podrías cargar terminals y setear los IDs si los trajeras del backend.
+    form.rut_descripcion = route.rut_descripcion; 
     showModal.value = true;
 };
 
@@ -234,21 +264,28 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* Estilos similares a los anteriores */
 .actions-bar { margin-bottom: 20px; text-align: right; }
 .data-table { width: 100%; border-collapse: separate; border-spacing: 0; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
 .data-table th, .data-table td { padding: 16px; text-align: left; border-bottom: 1px solid #e2e8f0; }
 .data-table th { background-color: #f8fafc; font-weight: 600; color: #475569; text-transform: uppercase; font-size: 0.75rem; }
 .font-bold { font-weight: 600; color: #1e293b; }
 .empty-cell { text-align: center; color: #94a3b8; font-style: italic; padding: 2rem; }
-.badge { padding: 4px 10px; border-radius: 99px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; background: #e0f2fe; color: #0369a1;}
+
+/* Estilos de Badges */
+.badge { padding: 4px 10px; border-radius: 99px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; display: inline-block; }
+.badge-blue { background: #e0f2fe; color: #0369a1; }
+.badge-green { background: #dcfce7; color: #15803d; }
+.badge-orange { background: #ffedd5; color: #c2410c; }
+.badge-purple { background: #f3e8ff; color: #7e22ce; }
+.badge-gray { background: #f1f5f9; color: #475569; }
+
+.type-icon { color: #64748b; font-weight: 600; }
 
 .btn-primary { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; }
 .btn-sm { padding: 6px 12px; font-size: 0.85rem; border: 1px solid #cbd5e1; background: white; border-radius: 4px; cursor: pointer; margin-right: 5px; }
 .btn-danger-sm { padding: 6px 12px; font-size: 0.85rem; border: 1px solid #fecaca; background: #fee2e2; color: #991b1b; border-radius: 4px; cursor: pointer; }
 .btn-secondary { background: #e2e8f0; color: #475569; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; margin-left: 10px; }
 
-/* Modal */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 50; }
 .modal-content { background: white; padding: 30px; border-radius: 12px; width: 500px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
 .form-group { margin-bottom: 15px; }

@@ -27,6 +27,7 @@ router.post('/providers/routes/list', userController.getRoutes);
 router.post('/providers/routes/create', userController.createRoute);
 router.post('/providers/routes/delete', userController.deleteRoute);
 router.post('/providers/travels/list', userController.getTravels);
+router.post('/providers/routes/update', userController.updateRoute);
 router.post('/providers/travels/create', userController.createTravel);
 router.post('/providers/travels/update', userController.updateTravel);
 

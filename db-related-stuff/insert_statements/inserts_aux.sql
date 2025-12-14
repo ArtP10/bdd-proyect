@@ -43,22 +43,22 @@ INSERT INTO privilegio(pri_nombre, pri_descripcion) VALUES
 -- IMPORTANTE: Esto asume que los IDs se generaron secuencialmente del 1 al 9 en el paso anterior.
 INSERT INTO rol_privilegio(fk_pri_codigo, fk_rol_codigo) VALUES
 -- Admin (Rol 1) tiene:
-(1,1), -- crear_usuarios
-(2,1), -- eliminar_usuarios
-(3,1), -- leer_usuarios
-(4,1), -- manipulacion_de_roles
-(5,1), -- crear_recursos
-(6,1), -- modificar_recursos
-(7,1), -- eliminar_recursos
+(1,10), -- crear_usuarios
+(2,10), -- eliminar_usuarios
+(3,10), -- leer_usuarios
+(4,10), -- manipulacion_de_roles
+(5,10), -- crear_recursos
+(6,10), -- modificar_recursos
+(7,10), -- eliminar_recursos
 
 -- Cliente (Rol 3) tiene:
-(8,3), -- reservar_y_comprar
-(9,3), -- manipular_viajeros
+(8,12), -- reservar_y_comprar
+(9,12), -- manipular_viajeros
 
 -- Proveedor (Rol 2) tiene:
-(5,2), -- crear_recursos (Reutilizamos el ID 5)
-(6,2), -- modificar_recursos (Reutilizamos el ID 6)
-(7,2); -- eliminar_recursos (Reutilizamos el ID 7)
+(5,11), -- crear_recursos (Reutilizamos el ID 5)
+(6,11), -- modificar_recursos (Reutilizamos el ID 6)
+(7,11); -- eliminar_recursos (Reutilizamos el ID 7)
 
 
 -- 6. Nacionalidades

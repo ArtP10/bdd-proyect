@@ -1,52 +1,70 @@
 const pool = require('../config/db');
 
 const loginUser = async (req, res) => {
-  const { p_search_name, p_search_pass, p_search_type } = req.body;
-
-  try {
-
-    const query = `
-      CALL sp_login_usuario($1, $2, $3, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
-    `;
-    const values = [p_search_name, p_search_pass, p_search_type];
+    const { username, password } = req.body;
     
-    const result = await pool.query(query, values);
-    
-    const dbResponse = result.rows[0];
+    try {
+        const client = await pool.connect();
+        try {
+            // 1. Buscamos el usuario y su rol
+            const userQuery = `
+                SELECT u.usu_codigo, u.usu_nombre_usuario, u.usu_contrasena, u.fk_rol_codigo, r.rol_nombre, u.fk_lugar
+                FROM usuario u
+                JOIN rol r ON u.fk_rol_codigo = r.rol_codigo
+                WHERE u.usu_nombre_usuario = $1
+            `;
+            const userResult = await client.query(userQuery, [username]);
 
- 
-    if (dbResponse.o_status_code === 200) {
-      
-      res.status(200).json({
-        success: true,
-        message: dbResponse.o_mensaje,
-        data: {
-          user_id: dbResponse.o_usu_codigo,
-          user_name: dbResponse.o_usu_nombre,
-          user_role: dbResponse.o_usu_rol,
-          user_correo: dbResponse.o_usu_correo,
-          privileges: dbResponse.o_rol_privilegios || [] // Array de privilegios
+            if (userResult.rows.length === 0) {
+                return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+            }
+
+            const user = userResult.rows[0];
+
+            // 2. Validación simple de contraseña (en producción usar bcrypt)
+            if (user.usu_contrasena !== password) {
+                return res.status(401).json({ success: false, message: 'Contraseña incorrecta' });
+            }
+
+            // 3. DATOS ADICIONALES SEGÚN ROL
+            let additionalData = {};
+
+            if (user.rol_nombre === 'Proveedor') {
+                // Buscamos el tipo de proveedor
+                const provQuery = 'SELECT prov_codigo, prov_tipo, prov_nombre FROM proveedor WHERE fk_usu_codigo = $1';
+                const provRes = await client.query(provQuery, [user.usu_codigo]);
+                
+                if (provRes.rows.length > 0) {
+                    additionalData = {
+                        provider_id: provRes.rows[0].prov_codigo,
+                        provider_type: provRes.rows[0].prov_tipo, // 'Aerolinea', 'Terrestre', etc.
+                        provider_name: provRes.rows[0].prov_nombre
+                    };
+                }
+            }
+
+            // 4. Respuesta Exitosa
+            res.status(200).json({
+                success: true,
+                message: 'Login exitoso',
+                user: {
+                    user_id: user.usu_codigo,
+                    user_name: user.usu_nombre_usuario,
+                    role: user.rol_nombre,
+                    role_id: user.fk_rol_codigo,
+                    location_id: user.fk_lugar,
+                    ...additionalData // Esparcimos los datos del proveedor si existen
+                }
+            });
+
+        } finally {
+            client.release();
         }
-      });
-
-    } else {
-      
-      res.status(dbResponse.o_status_code).json({
-        success: false,
-        message: dbResponse.o_mensaje
-      });
-
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Error interno del servidor' });
     }
-
-  } catch (err) {
-    console.error('Login Error:', err);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error interno del servidor' 
-    });
-  }
 };
-
 
 const registerClient = async (req, res) => {
   // 1. Extraemos fk_lugar del body
@@ -452,6 +470,23 @@ const getCompatibleTerminals = async (req, res) => {
 };
 
 // 2. Obtener Rutas del Proveedor
+
+// 3. Crear Ruta
+const createRoute = async (req, res) => {
+    // Recibimos rut_descripcion
+    const { user_id, costo, millas, rut_tipo, rut_descripcion, fk_origen, fk_destino } = req.body;
+    try {
+        // Ajustamos la llamada al SP para incluir el nuevo parámetro (ahora son 9 argumentos contando los INOUT)
+        const query = `CALL sp_registrar_ruta($1, $2, $3, $4, $5, $6, $7, NULL, NULL)`;
+        const values = [user_id, costo, millas, rut_tipo, rut_descripcion, fk_origen, fk_destino];
+        
+        const result = await pool.query(query, values);
+        const resp = result.rows[0];
+        res.status(resp.o_status_code).json({ success: resp.o_status_code === 201, message: resp.o_mensaje });
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+// READ
 const getRoutes = async (req, res) => {
     const { user_id } = req.body;
     try {
@@ -474,18 +509,19 @@ const getRoutes = async (req, res) => {
     } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
 };
 
-// 3. Crear Ruta
-const createRoute = async (req, res) => {
-    const { user_id, costo, millas, fk_origen, fk_destino } = req.body;
+const updateRoute = async (req, res) => {
+    // Recibir rut_descripcion
+    const { user_id, rut_codigo, costo, millas, rut_descripcion } = req.body;
     try {
-        const query = `CALL sp_registrar_ruta($1, $2, $3, $4, $5, NULL, NULL)`;
-        const result = await pool.query(query, [user_id, costo, millas, fk_origen, fk_destino]);
+        // Ajustar llamada al SP (ahora recibe descripción)
+        const query = `CALL sp_modificar_ruta($1, $2, $3, $4, $5, NULL, NULL)`;
+        const result = await pool.query(query, [user_id, rut_codigo, costo, millas, rut_descripcion]);
         const resp = result.rows[0];
-        res.status(resp.o_status_code).json({ success: resp.o_status_code === 201, message: resp.o_mensaje });
+        res.status(resp.o_status_code).json({ success: resp.o_status_code === 200, message: resp.o_mensaje });
     } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
-};
+};;
 
-// 4. Eliminar Ruta
+// DELETE (Nuevo)
 const deleteRoute = async (req, res) => {
     const { user_id, rut_codigo } = req.body;
     try {
@@ -569,5 +605,6 @@ module.exports = {
     getCompatibleTerminals,
     getTravels,
     createTravel,
-    updateTravel
+    updateTravel,
+    updateRoute
 };

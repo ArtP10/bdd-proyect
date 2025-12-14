@@ -3,8 +3,11 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 
 const userRoutes = require('./routes/userRoutes');
-// --- NUEVA LÍNEA: Importar rutas de paquetes ---
+
 const paqTurRoutes = require('./routes/paq_turRoutes'); 
+
+const homRoutes = require('./routes/homeRoutes');
+
 
 const app = express();
 const port = 3000;
@@ -13,6 +16,7 @@ app.use(cors());
 app.use(bodyParser.json());
 
 app.use('/api/users', userRoutes);
+app.use('/api/home',  homRoutes);
 
 // --- NUEVA LÍNEA: Usar rutas de paquetes ---
 // Los endpoints quedarán tipo: http://localhost:3000/api/packages/create

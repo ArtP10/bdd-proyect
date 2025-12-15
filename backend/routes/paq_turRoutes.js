@@ -13,6 +13,8 @@ router.get('/paquetes/:id/detalles', controller.getPackageDetails);
 router.post('/reglas', controller.createRule);
 router.get('/reglas', controller.getRules);
 router.post('/asignar-regla', controller.assignRuleToPackage);
+router.post('/paquetes/eliminar-elemento', controller.removePackageElement);
+
 
 // 3. Gestión de Contenido (SEPARADO)
 

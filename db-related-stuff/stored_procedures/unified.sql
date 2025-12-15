@@ -1448,5 +1448,459 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.sp_listar_servicios_genericos(
+	)
+    RETURNS TABLE(id integer, nombre character varying, descripcion character varying, fecha_inicio timestamp without time zone, costo numeric) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+    ROWS 1000
 
+AS $BODY$
+BEGIN
+    RETURN QUERY 
+    SELECT 
+        ser_codigo, 
+        ser_nombre, 
+        ser_descripcion, 
+        ser_fecha_hora_inicio,
+        ser_costo 
+    FROM servicio 
+    WHERE ser_tipo NOT IN ('Alojamiento', 'Hotel', 'Comida', 'Restaurante');
+END;
+$BODY$;
+
+CREATE OR REPLACE PROCEDURE public.sp_asignar_servicio_generico(
+	IN _id_paquete integer,
+	IN _id_servicio integer,
+	IN _cantidad integer)
+LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    INSERT INTO paq_ser (fk_paq_tur_codigo, fk_ser_codigo, cantidad)
+    VALUES (_id_paquete, _id_servicio, _cantidad)
+    ON CONFLICT (fk_paq_tur_codigo, fk_ser_codigo) 
+    DO UPDATE SET cantidad = paq_ser.cantidad + _cantidad;
+END;
+$BODY$;
+
+
+
+CREATE OR REPLACE FUNCTION sp_listar_servicios_disponibles()
+RETURNS TABLE (
+    id INT,
+    nombre VARCHAR,
+    tipo VARCHAR,
+    costo NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY 
+    SELECT ser_codigo, ser_nombre, ser_tipo, ser_costo 
+    FROM servicio 
+    WHERE ser_tipo IN ('Alojamiento', 'Comida', 'Restaurante', 'Hotel'); 
+END;
+$$ LANGUAGE plpgsql;
+
+-- 2. OBTENER TRASLADOS (Con información legible de la ruta)
+-- 1. ACTUALIZAR: Listar traslados incluyendo fecha y hora
+CREATE OR REPLACE FUNCTION sp_listar_traslados_disponibles()
+RETURNS TABLE (
+    id INT,
+    descripcion TEXT,
+    fecha TEXT, -- Nuevo campo
+    costo NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY 
+    SELECT 
+        t.tras_codigo, 
+        (mt.med_tra_tipo || ' - ' || term_o.ter_nombre || ' -> ' || term_d.ter_nombre)::TEXT,
+        TO_CHAR(t.tras_fecha_hora_inicio, 'DD/MM/YYYY HH24:MI'), -- Formato legible
+        r.rut_costo
+    FROM traslado t
+    JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo
+    JOIN terminal term_o ON r.fk_terminal_origen = term_o.ter_codigo
+    JOIN terminal term_d ON r.fk_terminal_destino = term_d.ter_codigo
+    JOIN medio_transporte mt ON t.fk_med_tra_codigo = mt.med_tra_codigo
+    WHERE t.tras_fecha_hora_inicio > NOW(); -- Solo futuros
+END;
+$$ LANGUAGE plpgsql;
+
+-- 2. NUEVO: Eliminar elemento del paquete
+CREATE OR REPLACE PROCEDURE sp_eliminar_elemento_paquete(
+    IN _tipo VARCHAR,               -- 'servicio', 'traslado', 'regla', 'habitacion', 'restaurante'
+    IN _id_paquete INTEGER,         -- ID del Paquete
+    IN _id_elemento INTEGER,        -- ID Principal (ser_codigo, tras_codigo, reg_codigo, hab_num, res_codigo)
+    IN _fecha_inicio TIMESTAMP DEFAULT NULL, -- Requerido para Habitacion/Restaurante
+    IN _extra_id INTEGER DEFAULT NULL        -- Requerido para Restaurante (num_mesa)
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- 1. Eliminar Servicio
+    IF _tipo = 'servicio' THEN
+        DELETE FROM paq_ser 
+        WHERE fk_paq_tur_codigo = _id_paquete AND fk_ser_codigo = _id_elemento;
+
+    -- 2. Eliminar Traslado
+    ELSIF _tipo = 'traslado' THEN
+        DELETE FROM paq_tras 
+        WHERE fk_paq_tur_codigo = _id_paquete AND fk_tras_codigo = _id_elemento;
+
+    -- 3. Eliminar Regla
+    ELSIF _tipo = 'regla' THEN
+        DELETE FROM reg_paq_paq 
+        WHERE fk_paq_tur_codigo = _id_paquete AND fk_reg_paq_codigo = _id_elemento;
+
+    -- 4. Eliminar Reserva de Habitación (Requiere ID Habitación + Fecha Inicio)
+    ELSIF _tipo = 'habitacion' THEN
+        IF _fecha_inicio IS NULL THEN
+            RAISE EXCEPTION 'Para eliminar habitación se requiere fecha de inicio';
+        END IF;
+        
+        DELETE FROM reserva_de_habitacion 
+        WHERE fk_paquete_turistico = _id_paquete 
+          AND fk_habitacion = _id_elemento
+          AND res_hab_fecha_hora_inicio = _fecha_inicio;
+
+    -- 5. Eliminar Reserva de Restaurante (Requiere ID Rest + Fecha + Num Mesa)
+    ELSIF _tipo = 'restaurante' THEN
+        IF _fecha_inicio IS NULL OR _extra_id IS NULL THEN
+            RAISE EXCEPTION 'Para eliminar restaurante se requiere fecha y número de mesa';
+        END IF;
+
+        DELETE FROM reserva_restaurante 
+        WHERE fk_paquete_turistico = _id_paquete 
+          AND fk_restaurante = _id_elemento
+          AND res_rest_fecha_hora = _fecha_inicio
+          AND res_rest_num_mesa = _extra_id;
+    
+    ELSE
+        RAISE EXCEPTION 'Tipo de elemento no válido: %', _tipo;
+    END IF;
+END;
+$$;
+-- 3. ASIGNAR SERVICIO A PAQUETE (Hoteles, Restaurantes, etc.)
+CREATE OR REPLACE PROCEDURE sp_asignar_servicio_paquete(
+    _id_paquete INT,
+    _id_servicio INT,
+    _cantidad INT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Insertar si no existe (upsert simple)
+    INSERT INTO paq_ser (fk_paq_tur_codigo, fk_ser_codigo, cantidad)
+    VALUES (_id_paquete, _id_servicio, _cantidad)
+    ON CONFLICT (fk_paq_tur_codigo, fk_ser_codigo) 
+    DO UPDATE SET cantidad = paq_ser.cantidad + _cantidad;
+END;
+$$;
+
+-- 4. ASIGNAR TRASLADO A PAQUETE
+CREATE OR REPLACE PROCEDURE sp_asignar_traslado_paquete(
+    _id_paquete INT,
+    _id_traslado INT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    INSERT INTO paq_tras (fk_paq_tur_codigo, fk_tras_codigo)
+    VALUES (_id_paquete, _id_traslado)
+    ON CONFLICT (fk_paq_tur_codigo, fk_tras_codigo) DO NOTHING;
+END;
+$$;
+
+
+-- 2. OBTENER REGLAS (Con Cursor)
+-- Coincide con: CALL sp_obtener_reglas_paquete(NULL, NULL, NULL)
+CREATE OR REPLACE PROCEDURE sp_obtener_reglas_paquete(
+    INOUT o_cursor REFCURSOR DEFAULT NULL,
+    INOUT o_status_code INT DEFAULT NULL,
+    INOUT o_mensaje VARCHAR DEFAULT NULL
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    o_cursor := 'cur_reglas'; -- Nombre del cursor
+    
+    OPEN o_cursor FOR
+        SELECT * FROM regla_paquete ORDER BY reg_paq_codigo DESC;
+
+    o_status_code := 200;
+    o_mensaje := 'Reglas obtenidas correctamente';
+EXCEPTION WHEN OTHERS THEN
+    o_status_code := 500;
+    o_mensaje := 'Error al listar reglas: ' || SQLERRM;
+END;
+$$;
+
+-- 3. ASIGNAR REGLA A PAQUETE
+-- Coincide con: CALL sp_asignar_regla_paquete($1, $2, NULL, NULL)
+CREATE OR REPLACE PROCEDURE sp_asignar_regla_paquete(
+    IN _fk_paquete INT,
+    IN _fk_regla INT,
+    INOUT o_status_code INT DEFAULT NULL,
+    INOUT o_mensaje VARCHAR DEFAULT NULL
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Verificamos si ya existe la asignación para no duplicar
+    IF EXISTS (SELECT 1 FROM reg_paq_paq WHERE fk_paq_tur_codigo = _fk_paquete AND fk_reg_paq_codigo = _fk_regla) THEN
+        o_status_code := 409; -- Conflict
+        o_mensaje := 'Esta regla ya está asignada al paquete';
+        RETURN;
+    END IF;
+
+    INSERT INTO reg_paq_paq (fk_paq_tur_codigo, fk_reg_paq_codigo)
+    VALUES (_fk_paquete, _fk_regla);
+
+    o_status_code := 201;
+    o_mensaje := 'Regla asignada correctamente';
+EXCEPTION WHEN OTHERS THEN
+    o_status_code := 500;
+    o_mensaje := 'Error al asignar regla: ' || SQLERRM;
+END;
+$$;
+
+
+CREATE OR REPLACE PROCEDURE sp_obtener_paquetes_turisticos(
+    OUT o_cursor REFCURSOR,
+    OUT o_status_code INTEGER,
+    OUT o_mensaje VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Abrimos el cursor con todos los datos
+    OPEN o_cursor FOR
+        SELECT 
+            paq_tur_codigo,
+            paq_tur_nombre,
+            paq_tur_monto_total,
+            paq_tur_monto_subtotal,
+            paq_tur_costo_en_millas
+        FROM paquete_turistico
+        ORDER BY paq_tur_codigo DESC; -- Ordenados del más nuevo al más viejo
+
+    o_status_code := 200;
+    o_mensaje := 'Paquetes obtenidos exitosamente';
+
+EXCEPTION
+    WHEN OTHERS THEN
+        o_status_code := 500;
+        o_mensaje := 'Error al obtener paquetes: ' || SQLERRM;
+        o_cursor := NULL;
+END;
+$$;
+
+
+CREATE OR REPLACE FUNCTION public.sp_listar_habitaciones_info(
+	)
+    RETURNS TABLE(id integer, info_hotel text, info_habitacion text, costo numeric) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+    ROWS 1000
+
+AS $BODY$
+BEGIN
+    RETURN QUERY 
+    SELECT 
+        h.hab_num_hab, 
+        hot.hot_nombre::TEXT,
+        (h.hab_descripcion || ' - Capacidad: ' || h.hab_capacidad)::TEXT,
+        h.hab_costo_noche
+    FROM habitacion h
+    JOIN hotel hot ON h.fk_hotel = hot.hot_codigo;
+END;
+$BODY$;
+
+CREATE OR REPLACE PROCEDURE public.sp_agregar_reserva_habitacion_paquete(
+	IN _id_paquete integer,
+	IN _id_habitacion integer,
+	IN _fecha_inicio timestamp without time zone,
+	IN _fecha_fin timestamp without time zone,
+	IN _costo numeric)
+LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    INSERT INTO reserva_de_habitacion (
+        res_hab_fecha_hora_inicio, 
+        res_hab_fecha_hora_fin, 
+        res_hab_costo_unitario, 
+        fk_habitacion, 
+        fk_paquete_turistico,
+        fk_detalle_reserva,   -- Permitimos NULL
+        fk_detalle_reserva_2  -- Permitimos NULL
+    )
+    VALUES (
+        _fecha_inicio, 
+        _fecha_fin, 
+        _costo, 
+        _id_habitacion, 
+        _id_paquete,
+        NULL, NULL
+    );
+END;
+$BODY$;
+
+CREATE OR REPLACE FUNCTION public.sp_listar_restaurantes_info(
+	)
+    RETURNS TABLE(id integer, nombre character varying, descripcion character varying) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+    ROWS 1000
+
+AS $BODY$
+BEGIN
+    RETURN QUERY 
+    SELECT res_codigo, res_nombre, res_descripcion FROM restaurante;
+END;
+$BODY$;
+
+
+CREATE OR REPLACE PROCEDURE public.sp_agregar_reserva_restaurante_paquete(
+	IN _id_paquete integer,
+	IN _id_restaurante integer,
+	IN _fecha timestamp without time zone,
+	IN _num_mesa integer,
+	IN _tamano_mesa integer)
+LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    INSERT INTO reserva_restaurante (
+        res_rest_fecha_hora, 
+        res_rest_num_mesa, 
+        res_rest_tamano_mesa, 
+        fk_restaurante, 
+        fk_paquete_turistico,
+        fk_detalle_reserva,
+        fk_detalle_reserva_2
+    )
+    VALUES (
+        _fecha, 
+        _num_mesa, 
+        _tamano_mesa, 
+        _id_restaurante, 
+        _id_paquete,
+        NULL, NULL
+    );
+END;
+$BODY$;
+
+
+CREATE OR REPLACE PROCEDURE public.sp_asignar_traslado_paquete(
+	IN _id_paquete integer,
+	IN _id_traslado integer)
+LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    INSERT INTO paq_tras (fk_paq_tur_codigo, fk_tras_codigo)
+    VALUES (_id_paquete, _id_traslado)
+    ON CONFLICT (fk_paq_tur_codigo, fk_tras_codigo) DO NOTHING;
+END;
+$BODY$;
+
+-- 1. DETALLE SERVICIOS (Agregamos cod_servicio)
+CREATE OR REPLACE FUNCTION public.sp_det_paq_servicios(_id integer)
+    RETURNS TABLE(cod_servicio integer, nombre character varying, tipo character varying, cantidad integer) 
+LANGUAGE 'plpgsql'
+AS $$
+BEGIN
+    RETURN QUERY 
+    SELECT 
+        ser.ser_codigo, -- ID NECESARIO
+        ser.ser_nombre::VARCHAR,
+        ser.ser_tipo::VARCHAR,
+        ps.cantidad
+    FROM paq_ser ps
+    JOIN servicio ser ON ps.fk_ser_codigo = ser.ser_codigo
+    WHERE ps.fk_paq_tur_codigo = _id;
+END;
+$$;
+
+-- 2. DETALLE TRASLADOS (Agregamos cod_traslado)
+CREATE OR REPLACE FUNCTION public.sp_det_paq_traslados(_id integer)
+    RETURNS TABLE(cod_traslado integer, origen character varying, destino character varying, tipo character varying) 
+LANGUAGE 'plpgsql'
+AS $$
+BEGIN
+    RETURN QUERY 
+    SELECT 
+        tr.tras_codigo, -- ID NECESARIO
+        ter_o.ter_nombre::VARCHAR, 
+        ter_d.ter_nombre::VARCHAR, 
+        mt.med_tra_tipo::VARCHAR
+    FROM paq_tras pt
+    JOIN traslado tr ON pt.fk_tras_codigo = tr.tras_codigo
+    JOIN ruta r ON tr.fk_rut_codigo = r.rut_codigo
+    JOIN terminal ter_o ON r.fk_terminal_origen = ter_o.ter_codigo
+    JOIN terminal ter_d ON r.fk_terminal_destino = ter_d.ter_codigo
+    JOIN medio_transporte mt ON tr.fk_med_tra_codigo = mt.med_tra_codigo
+    WHERE pt.fk_paq_tur_codigo = _id;
+END;
+$$;
+
+-- 3. DETALLE REGLAS (Agregamos cod_regla)
+CREATE OR REPLACE FUNCTION public.sp_det_paq_reglas(_id integer)
+    RETURNS TABLE(cod_regla integer, atributo character varying, operador character varying, valor character varying) 
+LANGUAGE 'plpgsql'
+AS $$
+BEGIN
+    RETURN QUERY 
+    SELECT 
+        rp.reg_paq_codigo, -- ID NECESARIO
+        rp.reg_paq_atributo, 
+        rp.reg_paq_operador, 
+        rp.reg_paq_valor
+    FROM reg_paq_paq rpp
+    JOIN regla_paquete rp ON rpp.fk_reg_paq_codigo = rp.reg_paq_codigo
+    WHERE rpp.fk_paq_tur_codigo = _id;
+END;
+$$;
+
+-- 4. DETALLE ALOJAMIENTOS (Agregamos fecha_inicio para poder borrar la reserva exacta)
+CREATE OR REPLACE FUNCTION public.sp_det_paq_alojamientos(_id integer)
+    RETURNS TABLE(num_habitacion integer, fecha_inicio timestamp, nombre_hotel character varying, habitacion character varying, entrada text, salida text) 
+LANGUAGE 'plpgsql'
+AS $$
+BEGIN
+    RETURN QUERY 
+    SELECT 
+        rh.fk_habitacion, 
+        rh.res_hab_fecha_hora_inicio, -- NECESARIO PARA BORRAR
+        hot.hot_nombre::VARCHAR,
+        hab.hab_descripcion::VARCHAR,
+        TO_CHAR(rh.res_hab_fecha_hora_inicio, 'DD/MM/YYYY HH24:MI'),
+        TO_CHAR(rh.res_hab_fecha_hora_fin, 'DD/MM/YYYY HH24:MI')
+    FROM reserva_de_habitacion rh
+    JOIN habitacion hab ON rh.fk_habitacion = hab.hab_num_hab
+    JOIN hotel hot ON hab.fk_hotel = hot.hot_codigo
+    WHERE rh.fk_paquete_turistico = _id;
+END;
+$$;
+
+-- 5. DETALLE RESTAURANTES (Agregamos datos clave para borrar)
+CREATE OR REPLACE FUNCTION public.sp_det_paq_restaurantes(_id integer)
+    RETURNS TABLE(cod_restaurante integer, fecha_reserva timestamp, num_mesa_id integer, nombre_restaurante character varying, mesa integer, personas integer, fecha text) 
+LANGUAGE 'plpgsql'
+AS $$
+BEGIN
+    RETURN QUERY 
+    SELECT 
+        res.res_codigo,
+        rr.res_rest_fecha_hora,
+        rr.res_rest_num_mesa,
+        res.res_nombre::VARCHAR,
+        rr.res_rest_num_mesa,
+        rr.res_rest_tamano_mesa,
+        TO_CHAR(rr.res_rest_fecha_hora, 'DD/MM/YYYY HH24:MI')
+    FROM reserva_restaurante rr
+    JOIN restaurante res ON rr.fk_restaurante = res.res_codigo
+    WHERE rr.fk_paquete_turistico = _id;
+END;
+$$;
 COMMIT;

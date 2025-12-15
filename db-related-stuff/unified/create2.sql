@@ -546,8 +546,8 @@ CREATE TABLE reserva_de_habitacion(
     res_hab_fecha_hora_fin TIMESTAMP NOT NULL,
     res_hab_costo_unitario NUMERIC(10,2) NOT NULL,
     fk_habitacion INTEGER NOT NULL,
-    fk_detalle_reserva INTEGER NOT NULL,
-    fk_detalle_reserva_2 INTEGER NOT NULL,
+    fk_detalle_reserva INTEGER,
+    fk_detalle_reserva_2 INTEGER,
     fk_paquete_turistico INTEGER,
     PRIMARY KEY(res_hab_fecha_hora_inicio, fk_habitacion, res_hab_fecha_hora_fin)
 );
@@ -557,8 +557,8 @@ CREATE TABLE reserva_restaurante(
     res_rest_num_mesa INTEGER NOT NULL,
     res_rest_tamano_mesa INTEGER NOT NULL,
     fk_restaurante INTEGER NOT NULL,
-    fk_detalle_reserva INTEGER NOT NULL,
-    fk_detalle_reserva_2 INTEGER NOT NULL,
+    fk_detalle_reserva INTEGER,
+    fk_detalle_reserva_2 INTEGER,
     fk_paquete_turistico INTEGER,
     PRIMARY KEY(res_rest_fecha_hora, fk_restaurante, res_rest_num_mesa)
 );

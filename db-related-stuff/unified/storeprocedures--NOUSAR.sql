@@ -652,29 +652,43 @@ LANGUAGE plpgsql AS $$
 DECLARE
     v_prov_id INTEGER;
 BEGIN
-    -- Obtenemos el ID del proveedor asociado al usuario
-    SELECT prov_codigo INTO v_prov_id FROM proveedor WHERE fk_usu_codigo = i_usu_codigo;
+    -- 1. Obtener ID del proveedor
+    SELECT prov_codigo INTO v_prov_id 
+    FROM proveedor 
+    WHERE fk_usu_codigo = i_usu_codigo;
 
+    -- 2. Abrir Cursor con la consulta corregida
     OPEN o_cursor FOR
     SELECT 
         r.rut_codigo,
         r.rut_costo,
         r.rut_millas_otorgadas,
+        r.rut_tipo,          -- Agregado (Necesario para el icono del Front)
+        r.rut_descripcion,   -- Agregado (Necesario para el badge del Front)
+        
+        -- Concatenación de nombres para mostrar "Maiquetía (La Guaira)"
         (to1.ter_nombre || ' (' || l1.lug_nombre || ')') as origen_nombre,
-        (td1.ter_nombre || ' (' || l2.lug_nombre || ')') as destino_nombre,
-        to1.ter_tipo
+        (td1.ter_nombre || ' (' || l2.lug_nombre || ')') as destino_nombre
+        
     FROM ruta r
     JOIN terminal to1 ON r.fk_terminal_origen = to1.ter_codigo
     JOIN terminal td1 ON r.fk_terminal_destino = td1.ter_codigo
-    JOIN lugar l1 ON to1.fk_lug_codigo = l1.lug_codigo 
-    JOIN lugar l2 ON td1.fk_lug_codigo = l2.lug_codigo 
+    
+    -- CORRECCIÓN AQUÍ: En tu tabla terminal la FK se llama 'fk_lugar', no 'fk_lug_codigo'
+    JOIN lugar l1 ON to1.fk_lugar = l1.lug_codigo 
+    JOIN lugar l2 ON td1.fk_lugar = l2.lug_codigo 
+    
     WHERE r.fk_prov_codigo = v_prov_id
     ORDER BY r.rut_codigo DESC;
 
-    o_status_code := 200; o_mensaje := 'Rutas obtenidas.';
+    o_status_code := 200; 
+    o_mensaje := 'Rutas obtenidas correctamente.';
+
 EXCEPTION WHEN OTHERS THEN
-    o_status_code := 500; o_mensaje := 'Error BD: ' || SQLERRM;
-END; $$;
+    o_status_code := 500; 
+    o_mensaje := 'Error BD: ' || SQLERRM;
+END; 
+$$;
 
 -- =============================================
 -- 18. PROCEDIMIENTO: OBTENER NACIONALIDADES
@@ -1191,7 +1205,7 @@ BEGIN
         (t.ter_nombre || ' - ' || l.lug_nombre || ', ' || p.lug_nombre) AS ter_nombre_completo,
         t.ter_tipo
     FROM terminal t
-    JOIN lugar l ON t.fk_lug_codigo = l.lug_codigo
+    JOIN lugar l ON t.fk_lugar = l.lug_codigo
     JOIN lugar p ON l.fk_lugar = p.lug_codigo
     WHERE 
         (v_pro_tipo = 'Aerolinea' AND t.ter_tipo = 'Aeropuerto') OR

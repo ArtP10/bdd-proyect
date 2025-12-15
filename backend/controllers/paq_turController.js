@@ -262,6 +262,33 @@ const getPackageDetails = async (req, res) => {
     }
 };
 
+
+const removePackageElement = async (req, res) => {
+    // 1. Desestructuramos TODOS los parámetros posibles que envía el front
+    const { tipo, id_paquete, id_elemento, fecha_inicio, extra_id } = req.body; 
+
+    try {
+        // 2. Llamada al SP con 5 placeholders ($1 ... $5)
+        const query = `CALL sp_eliminar_elemento_paquete($1, $2, $3, $4, $5)`;
+        
+        // 3. Pasamos los valores. Usamos '|| null' por seguridad si vienen undefined
+        const values = [
+            tipo, 
+            id_paquete, 
+            id_elemento, 
+            fecha_inicio || null, 
+            extra_id || null
+        ];
+
+        await pool.query(query, values);
+        
+        res.json({ success: true, message: 'Elemento eliminado correctamente' });
+    } catch (err) {
+        console.error("Error eliminando elemento:", err);
+        res.status(500).json({ success: false, message: 'Error interno al eliminar' });
+    }
+};
+
 // ... module.exports ...
 
 module.exports = {
@@ -271,6 +298,7 @@ module.exports = {
     updatePackage,
     deletePackage,
     getPackageDetails,
+    removePackageElement,
 
     // Reglas
     createRule,

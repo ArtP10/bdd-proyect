@@ -101,12 +101,50 @@ ALTER TABLE pue_tras ADD CONSTRAINT fk_pt_paquete FOREIGN KEY (fk_paq_tur_codigo
 ALTER TABLE pue_tras ADD CONSTRAINT un_asiento_por_vuelo UNIQUE (fk_tras_codigo, fk_pue_codigo, fk_med_tra_codigo);
 
 ALTER TABLE reserva_de_habitacion ADD CONSTRAINT fk_res_hab_habitacion FOREIGN KEY (fk_habitacion) REFERENCES habitacion(hab_num_hab);
+ALTER TABLE reserva_restaurante ADD CONSTRAINT fk_res_rest_restaurante FOREIGN KEY (fk_restaurante) REFERENCES restaurante(res_codigo);
+
+-- Paquete / Detalle References (CRITICAL: Don't leave these out!)
 ALTER TABLE reserva_de_habitacion ADD CONSTRAINT fk_res_hab_detalle FOREIGN KEY (fk_detalle_reserva, fk_detalle_reserva_2) REFERENCES detalle_reserva(fk_compra, det_res_codigo);
 ALTER TABLE reserva_de_habitacion ADD CONSTRAINT fk_res_hab_paquete FOREIGN KEY (fk_paquete_turistico) REFERENCES paquete_turistico(paq_tur_codigo);
 
-ALTER TABLE reserva_restaurante ADD CONSTRAINT fk_res_rest_restaurante FOREIGN KEY (fk_restaurante) REFERENCES restaurante(res_codigo);
 ALTER TABLE reserva_restaurante ADD CONSTRAINT fk_res_rest_detalle FOREIGN KEY (fk_detalle_reserva, fk_detalle_reserva_2) REFERENCES detalle_reserva(fk_compra, det_res_codigo);
 ALTER TABLE reserva_restaurante ADD CONSTRAINT fk_res_rest_paquete FOREIGN KEY (fk_paquete_turistico) REFERENCES paquete_turistico(paq_tur_codigo);
+
+
+ALTER TABLE reserva_de_habitacion
+ADD CONSTRAINT chk_res_hab_exclusivity
+CHECK (
+    (
+        -- es un fkn paquete
+        fk_paquete_turistico IS NOT NULL 
+        AND fk_detalle_reserva IS NULL 
+        AND fk_detalle_reserva_2 IS NULL
+    )
+    OR
+    (
+        -- es una fkn reserva
+        fk_paquete_turistico IS NULL 
+        AND fk_detalle_reserva IS NOT NULL 
+        AND fk_detalle_reserva_2 IS NOT NULL
+    )
+);
+
+ALTER TABLE reserva_restaurante
+ADD CONSTRAINT chk_res_rest_exclusivity
+CHECK (
+    (
+        --lo mismo
+        fk_paquete_turistico IS NOT NULL 
+        AND fk_detalle_reserva IS NULL 
+        AND fk_detalle_reserva_2 IS NULL
+    )
+    OR
+    (
+        fk_paquete_turistico IS NULL 
+        AND fk_detalle_reserva IS NOT NULL 
+        AND fk_detalle_reserva_2 IS NOT NULL
+    )
+);
 
 ALTER TABLE compra ADD CONSTRAINT fk_compra_usuario FOREIGN KEY (fk_usuario) REFERENCES usuario(usu_codigo);
 ALTER TABLE compra ADD CONSTRAINT fk_compra_plan FOREIGN KEY (fk_plan_financiamiento) REFERENCES plan_financiamiento(plan_fin_codigo);

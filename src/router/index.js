@@ -11,6 +11,10 @@ import NotDevelopedYet from '@/views/general/NotDevelopedYet.vue';
 import HomePage from '@/views/general/HomePage.vue';
 import Cart from '@/views/client/Cart.vue';
 
+// IMPORTANTE: Asegúrate de que este nombre de archivo coincida con el que creaste.
+// Si copiaste mi código anterior, el archivo se llamaba 'AdminPromociones.vue'.
+// Si lo llamaste 'AdminGestionPromociones.vue', déjalo así.
+import Promotions from '@/views/admin/AdminGestionPromociones.vue'; 
 // CORRECCIÓN AQUÍ: Agregada la barra '/' después de la arroba
 import SearchResults from '@/views/general/SearchResults.vue';
 
@@ -60,10 +64,22 @@ const router = createRouter({
             props: route => ({ query: route.query }) 
         },
         {
+            path:'/providers/airlines/dashboard',
+            name:'providers-airlines-dashboard',
+            component:ProviderAirlineDashboard
+        },
+        
+        // --- RUTAS DE PROMOCIONES ---
+        // Solo necesitas esta ruta. El "Builder" ahora es un modal dentro de ella.
+        {
+            path:'/admin/promotions',
+            name:'admin-promotions',
+            component:Promotions
             path:'/cart',
             name:'cart',
             component:Cart
         }
+        // SE ELIMINÓ LA RUTA '/promotions/build-promotion/:prom_codigo' PORQUE YA NO ES NECESARIA
     ]
 })
 

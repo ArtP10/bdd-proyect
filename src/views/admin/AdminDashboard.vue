@@ -12,6 +12,10 @@
           <li :class="{ active: activeMenu === 'Proveedores' }">
             <a href="#" @click.prevent="activeMenu = 'Proveedores'">Proveedores</a>
           </li>
+          <li :class="{ active: activeMenu === 'Promociones' }">
+            <a href="#" @click.prevent="activeMenu = 'Promociones'">Promociones</a>
+          </li>
+          </ul>
           <li :class="{ active: activeMenu === 'Paquetes' }">
             <a href="#" @click.prevent="activeMenu = 'Paquetes'">Paquetes Turísticos</a>
           </li>
@@ -29,6 +33,8 @@
       <div v-if="activeMenu === 'Proveedores'">
         <AdminGestionProveedor />
       </div>
+      <div v-if="activeMenu === 'Promociones'">
+        <Promotions />
 
       <div v-if="activeMenu === 'Paquetes'">
         <AdminGestionPaquetes />
@@ -42,6 +48,7 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 // Importamos tus componentes
 import AdminGestionProveedor from './AdminGestionProveedor.vue';
+import Promotions from './AdminGestionPromociones.vue';
 import AdminGestionPaquetes from './AdminGestionPaquetes.vue'; // <--- Importante
 
 const router = useRouter();

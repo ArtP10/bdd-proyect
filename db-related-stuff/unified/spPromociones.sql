@@ -9,7 +9,7 @@ DROP PROCEDURE IF EXISTS gestionar_asignacion_promocion CASCADE;
 DROP FUNCTION IF EXISTS get_elementos_busqueda CASCADE;
 DROP FUNCTION IF EXISTS get_habitaciones_por_hotel CASCADE;
 DROP FUNCTION IF EXISTS sp_obtener_detalle_promocion CASCADE;
-DROP FUNCTION IF EXISTS sp_obtener_promociones CASCADE;
+DROP FUNCTION IF EXISTS fn_listar_promociones CASCADE;
 
 -- ================================================================
 -- 1. AJUSTES DE TABLA (Solo si no lo has hecho)
@@ -230,8 +230,9 @@ $$ LANGUAGE plpgsql;
 
 -- ================================================================
 -- D. Obtener todas las promociones
--- ================================================================
-CREATE OR REPLACE FUNCTION sp_obtener_promociones()
+-- ===============================================================
+-- Creación de la función con NOMBRE NUEVO para evitar conflictos
+CREATE OR REPLACE FUNCTION fn_listar_promociones()
 RETURNS TABLE (
     prom_codigo INT,
     prom_nombre VARCHAR,
@@ -243,8 +244,8 @@ BEGIN
     RETURN QUERY 
     SELECT 
         p.prom_codigo, 
-        p.prom_nombre, 
-        p.prom_descripcion, 
+        p.prom_nombre::VARCHAR, 
+        p.prom_descripcion::VARCHAR, 
         p.prom_fecha_hora_vencimiento, 
         p.prom_descuento
     FROM promocion p

@@ -9,6 +9,7 @@ import AdminDashboard from '@/views/admin/AdminDashboard.vue';
 import ProviderAirlineDashboard from '@/views/provider/ProviderAirlineDashboard.vue';
 import NotDevelopedYet from '@/views/general/NotDevelopedYet.vue';
 import HomePage from '@/views/general/HomePage.vue';
+import Cart from '@/views/client/Cart.vue';
 
 // CORRECCIÓN AQUÍ: Agregada la barra '/' después de la arroba
 import SearchResults from '@/views/general/SearchResults.vue';
@@ -57,6 +58,11 @@ const router = createRouter({
             component: SearchResults,
             // Esta función permite pasar los query params (?destino=x) como props al componente
             props: route => ({ query: route.query }) 
+        },
+        {
+            path:'/cart',
+            name:'cart',
+            component:Cart
         }
     ]
 })

@@ -198,3 +198,7 @@ ALTER TABLE lista_deseos ADD CONSTRAINT fk_deseo_usuario FOREIGN KEY (fk_usuario
 ALTER TABLE lista_deseos ADD CONSTRAINT fk_deseo_paquete FOREIGN KEY (fk_paquete_turistico) REFERENCES paquete_turistico(paq_tur_codigo);
 ALTER TABLE lista_deseos ADD CONSTRAINT fk_deseo_servicio FOREIGN KEY (fk_servicio) REFERENCES servicio(ser_codigo);
 ALTER TABLE lista_deseos ADD CONSTRAINT fk_deseo_traslado FOREIGN KEY (fk_traslado) REFERENCES traslado(tras_codigo);
+
+
+ALTER TABLE pue_tras 
+ADD COLUMN disponible BOOLEAN DEFAULT TRUE;

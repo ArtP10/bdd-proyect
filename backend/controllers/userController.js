@@ -581,6 +581,32 @@ const updateTravel = async (req, res) => {
     } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
 };
 
+
+
+const getMyTickets = async (req, res) => {
+    const { user_id } = req.body;
+    
+    try {
+        const client = await pool.connect();
+        try {
+            // Llamamos a la función que devuelve la tabla de tickets
+            const query = 'SELECT * FROM sp_obtener_tickets_cliente($1)';
+            const result = await client.query(query, [user_id]);
+            
+            res.status(200).json({ 
+                success: true, 
+                data: result.rows 
+            });
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Error al obtener tickets' });
+    }
+};
+
+
 module.exports = {
     loginUser,
     registerClient,
@@ -606,5 +632,6 @@ module.exports = {
     getTravels,
     createTravel,
     updateTravel,
-    updateRoute
+    updateRoute,
+    getMyTickets
 };

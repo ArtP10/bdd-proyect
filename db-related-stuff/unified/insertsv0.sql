@@ -20,6 +20,7 @@ INSERT INTO rol(rol_nombre, rol_descripcion) VALUES
 ('Proveedor', 'Responsable de proveedor de servicios'),
 ('Cliente', 'Consumidor/Comprador de servicios');
 
+
 -- =====================================================
 -- 3. PRIVILEGIOS (9 registros - EXACTOS)
 -- =====================================================
@@ -584,6 +585,7 @@ INSERT INTO medio_transporte (med_tra_capacidad, med_tra_descripcion, med_tra_ti
 -- =====================================================
 -- 20. PUESTOS (10 registros)
 -- =====================================================
+/*
 INSERT INTO puesto (pue_codigo, pue_descripcion, pue_costo_agregado, fk_med_tra_codigo) VALUES
 (1, 'Asiento ventana clase económica', 0.00, 1),
 (2, 'Asiento pasillo clase económica', 0.00, 1),
@@ -595,6 +597,8 @@ INSERT INTO puesto (pue_codigo, pue_descripcion, pue_costo_agregado, fk_med_tra_
 (2, 'Camarote con balcón', 200.00, 4),
 (1, 'Asiento primera clase', 300.00, 5),
 (1, 'Asiento van', 0.00, 6);
+Eliminado pq colocamos el trigger
+*/
 
 -- =====================================================
 -- 21. RUTAS (10 registros)

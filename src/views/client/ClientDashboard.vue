@@ -32,6 +32,10 @@
         </button>
       </header>
 
+      <div class="tabs" v-if="activeMenuItem === 'Pagos'">
+        <Payments :user-id="userInfo.user_id" />
+      </div>
+
       <div class="tabs" v-if="activeMenuItem === 'Gestion'">
          <button class="tab" :class="{ active: activeTab === 'Datos personales' }" @click="activeTab = 'Datos personales'">Datos personales</button>
          <button class="tab" :class="{ active: activeTab === 'Mis viajeros' }" @click="activeTab = 'Mis viajeros'">Mis viajeros</button> 
@@ -52,10 +56,14 @@
       </div>
 
       <div v-else>
-        <div class="profile-card">
-          <p>Contenido de {{ activeMenuItem }} en construcción...</p>
-        </div>
-      </div>
+   <div v-if="activeMenuItem === 'Mis Servicios'">
+      <MyServices :user-id="userInfo.user_id" />
+   </div>
+
+   <div v-else class="profile-card">
+      <p>Contenido de {{ activeMenuItem }} en construcción...</p>
+   </div>
+</div>
     </main>
   </div>
 </template>
@@ -64,6 +72,8 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import Travelers from './Travelers.vue'; 
+import MyServices from './MyServices.vue';
+import Payments from './Payments.vue';
 
 const router = useRouter();
 const userInfo = ref({});

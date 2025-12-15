@@ -1,21 +1,5 @@
 
-CREATE OR REPLACE FUNCTION fn_calcular_puesto_id()
-RETURNS TRIGGER AS $$
-BEGIN
 
-    NEW.pue_codigo := (
-        SELECT COALESCE(MAX(pue_codigo), 0) + 1
-        FROM puesto
-        WHERE fk_med_tra_codigo = NEW.fk_med_tra_codigo
-    );
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_auto_puesto_id
-BEFORE INSERT ON puesto
-FOR EACH ROW
-EXECUTE FUNCTION fn_calcular_puesto_id();
 
 
 
@@ -238,3 +222,202 @@ CREATE TRIGGER trg_chk_fechas_reserva
 BEFORE INSERT OR UPDATE ON detalle_reserva
 FOR EACH ROW
 EXECUTE FUNCTION fn_validar_fechas_reserva();
+
+
+
+-- Función del Trigger
+CREATE OR REPLACE FUNCTION fn_procesar_millas_reserva()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_millas_ganadas INTEGER := 0;
+    v_usuario_id INTEGER;
+    v_pago_id INTEGER;
+BEGIN
+    -- 1. Calcular Millas según el tipo de producto
+    -- A. Si es Traslado (Asiento de avión/bus)
+    IF NEW.fk_pue_tras IS NOT NULL THEN
+        SELECT r.rut_millas_otorgadas INTO v_millas_ganadas
+        FROM pue_tras pt
+        JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo
+        JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo
+        WHERE pt.pue_tras_codigo = NEW.fk_pue_tras;
+    
+    -- B. Si es Servicio Genérico
+    ELSIF NEW.fk_servicio IS NOT NULL THEN
+        SELECT ser_millas_otorgadas INTO v_millas_ganadas
+        FROM servicio WHERE ser_codigo = NEW.fk_servicio;
+
+    -- C. Si es Paquete Turístico
+    ELSIF NEW.fk_paquete_turistico IS NOT NULL THEN
+        SELECT paq_tur_costo_en_millas INTO v_millas_ganadas -- Usamos el costo como referencia de ganancia (o ajusta si tienes columna 'ganancia')
+        FROM paquete_turistico WHERE paq_tur_codigo = NEW.fk_paquete_turistico;
+    END IF;
+
+    -- 2. Si hay millas que otorgar, procedemos
+    IF v_millas_ganadas > 0 THEN
+        
+        -- Obtener ID del Usuario dueño de la compra
+        SELECT fk_usuario INTO v_usuario_id 
+        FROM compra WHERE com_codigo = NEW.fk_compra;
+
+        -- Actualizar saldo del usuario
+        UPDATE usuario 
+        SET usu_total_millas = usu_total_millas + v_millas_ganadas
+        WHERE usu_codigo = v_usuario_id;
+
+        -- Intentar obtener el pago asociado a esta compra (para la FK obligatoria)
+        -- Tomamos el primer pago registrado para esta compra (ej: la inicial o pago total)
+        SELECT pag_codigo INTO v_pago_id 
+        FROM pago WHERE fk_compra = NEW.fk_compra LIMIT 1;
+
+        -- Si no hay pago aun (ej: inserción en misma transacción), este insert podría fallar por FK.
+        -- SOLUCIÓN: Si tu lógica de negocio inserta Pago DESPUÉS de Detalle, este trigger debería ser AFTER INSERT ON pago, no detalle.
+        -- Pero como pediste trigger al relacionar detalle, asumiremos que existe un pago o manejaremos la excepción.
+        
+        IF v_pago_id IS NOT NULL THEN
+            INSERT INTO milla (
+                mil_valor_obtenido, 
+                mil_fecha_inicio, 
+                mil_fecha_fin, 
+                mil_valor_restado, 
+                fk_compra, 
+                fk_pago
+            ) VALUES (
+                v_millas_ganadas, 
+                CURRENT_DATE, 
+                CURRENT_DATE + INTERVAL '1 year', -- Vencen en 1 año
+                0, 
+                NEW.fk_compra, 
+                v_pago_id
+            );
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Creación del Trigger
+DROP TRIGGER IF EXISTS trg_calcular_millas ON detalle_reserva;
+
+CREATE TRIGGER trg_calcular_millas
+AFTER INSERT ON detalle_reserva
+FOR EACH ROW
+EXECUTE FUNCTION fn_procesar_millas_reserva();
+
+
+BEGIN;
+
+-- 1. ELIMINAR EL TRIGGER ERRÓNEO (El que se dispara en detalle_reserva)
+DROP TRIGGER IF EXISTS trg_otorgar_millas ON detalle_reserva;
+DROP FUNCTION IF EXISTS fn_otorgar_millas_compra();
+
+-- 2. CREAR NUEVA FUNCIÓN PARA CALCULAR MILLAS AL PAGAR
+CREATE OR REPLACE FUNCTION fn_otorgar_millas_al_pagar()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_millas_totales INTEGER := 0;
+    v_usuario_id INTEGER;
+BEGIN
+    -- A. Sumar todas las millas acumuladas por los detalles de ESTA compra
+    SELECT COALESCE(SUM(
+        CASE
+            -- Si es Traslado
+            WHEN dr.fk_pue_tras IS NOT NULL THEN (
+                SELECT r.rut_millas_otorgadas 
+                FROM pue_tras pt 
+                JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo 
+                JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo 
+                WHERE pt.pue_tras_codigo = dr.fk_pue_tras
+            )
+            -- Si es Servicio
+            WHEN dr.fk_servicio IS NOT NULL THEN (
+                SELECT ser_millas_otorgadas 
+                FROM servicio 
+                WHERE ser_codigo = dr.fk_servicio
+            )
+            -- Si es Paquete
+            WHEN dr.fk_paquete_turistico IS NOT NULL THEN (
+                SELECT paq_tur_costo_en_millas 
+                FROM paquete_turistico 
+                WHERE paq_tur_codigo = dr.fk_paquete_turistico
+            )
+            ELSE 0
+        END
+    ), 0) INTO v_millas_totales
+    FROM detalle_reserva dr
+    WHERE dr.fk_compra = NEW.fk_compra;
+
+    -- B. Si ganó millas, procesarlas
+    IF v_millas_totales > 0 THEN
+        -- Obtener usuario dueño de la compra
+        SELECT fk_usuario INTO v_usuario_id FROM compra WHERE com_codigo = NEW.fk_compra;
+
+        -- 1. Actualizar saldo del usuario
+        UPDATE usuario 
+        SET usu_total_millas = usu_total_millas + v_millas_totales
+        WHERE usu_codigo = v_usuario_id;
+
+        -- 2. Insertar historial en tabla 'milla'
+        -- AHORA SÍ TENEMOS NEW.pag_codigo PORQUE EL DISPARADOR ES LA TABLA PAGO
+        INSERT INTO milla (
+            mil_valor_obtenido, 
+            mil_fecha_inicio, 
+            mil_fecha_fin, 
+            mil_valor_restado, 
+            fk_compra, 
+            fk_pago
+        ) VALUES (
+            v_millas_totales, 
+            CURRENT_DATE, 
+            CURRENT_DATE + INTERVAL '1 year', -- Vencen en 1 año
+            0, 
+            NEW.fk_compra, 
+            NEW.pag_codigo -- <--- ¡Aquí está la solución!
+        );
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 3. ASOCIAR EL TRIGGER A LA TABLA PAGO (AFTER INSERT)
+DROP TRIGGER IF EXISTS trg_millas_al_pagar ON pago;
+
+CREATE TRIGGER trg_millas_al_pagar
+AFTER INSERT ON pago
+FOR EACH ROW
+EXECUTE FUNCTION fn_otorgar_millas_al_pagar();
+
+COMMIT;
+
+BEGIN;
+
+-- 1. Función del Trigger
+CREATE OR REPLACE FUNCTION fn_generar_asientos_traslado()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Insertar automáticamente en el inventario (pue_tras)
+    -- copiando la configuración de puestos del avión (medio_transporte)
+    INSERT INTO pue_tras (fk_tras_codigo, fk_pue_codigo, fk_med_tra_codigo, disponible)
+    SELECT 
+        NEW.tras_codigo,        -- ID del nuevo vuelo
+        pue_codigo,             -- ID del asiento (1, 2, 3...)
+        NEW.fk_med_tra_codigo,  -- ID del avión
+        TRUE                    -- Disponible por defecto
+    FROM puesto
+    WHERE fk_med_tra_codigo = NEW.fk_med_tra_codigo;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 2. Creación del Trigger
+DROP TRIGGER IF EXISTS trg_generar_inventario_vuelo ON traslado;
+
+CREATE TRIGGER trg_generar_inventario_vuelo
+AFTER INSERT ON traslado
+FOR EACH ROW
+EXECUTE FUNCTION fn_generar_asientos_traslado();
+
+COMMIT;

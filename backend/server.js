@@ -8,6 +8,10 @@ const paqTurRoutes = require('./routes/paq_turRoutes');
 
 const homRoutes = require('./routes/homeRoutes');
 
+const cartRoutes = require('./routes/cartRoutes')
+
+const paymentRoutes = require('./routes/routesPayment');
+
 
 const app = express();
 const port = 3000;
@@ -17,6 +21,8 @@ app.use(bodyParser.json());
 
 app.use('/api/users', userRoutes);
 app.use('/api/home',  homRoutes);
+app.use('/api/cart', cartRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // --- NUEVA LÍNEA: Usar rutas de paquetes ---
 // Los endpoints quedarán tipo: http://localhost:3000/api/packages/create

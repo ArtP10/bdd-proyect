@@ -40,7 +40,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import AdminGestionProveedor from './AdminGestionProveedor.vue';
-import Promotions from './Promotions.vue';
+import Promotions from './AdminGestionPromociones.vue';
 
 const router = useRouter();
 const activeMenu = ref('Proveedores'); // Por defecto para probar

@@ -17,6 +17,13 @@
           </li>
         </ul>
       </nav>
+
+       <div class="sidebar-footer">
+        <button class="btn-logout" @click="handleLogout">
+          <i class="fa-solid fa-right-from-bracket"></i> Cerrar Sesión
+        </button>
+      </div>
+
     </aside>
 
     <main class="main-content">
@@ -51,6 +58,12 @@ onMounted(() => {
   const session = localStorage.getItem('user_session');
   if (!session) router.push('/login');
 });
+
+const handleLogout = () => {
+    localStorage.removeItem('user_session');
+    localStorage.removeItem('userRole');
+    router.push('/');
+};
 </script>
 
 <style scoped>
@@ -64,4 +77,5 @@ onMounted(() => {
 .sidebar-nav li.active a { background-color: #334155; color: white; border-left-color: #3b82f6; }
 .main-content { flex: 1; padding: 2rem; overflow-y: auto; }
 .page-title { margin-bottom: 2rem; font-weight: 600; color: #1e293b; }
+.sidebar-footer { padding: 1.5rem; border-top: 1px solid #f0f0f0; }
 </style>

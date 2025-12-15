@@ -103,7 +103,7 @@ const goToStore = () => {
 const handleLogout = () => {
     localStorage.removeItem('user_session');
     localStorage.removeItem('userRole');
-    router.push('/login');
+    router.push('/');
 };
 </script>
 

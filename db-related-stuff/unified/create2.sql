@@ -471,8 +471,8 @@ CREATE TABLE milla(
     mil_fecha_inicio DATE NOT NULL,
     mil_fecha_fin DATE,
     mil_valor_restado INTEGER,
-    fk_compra INTEGER NOT NULL,
-    fk_pago INTEGER NOT NULL
+    fk_compra INTEGER,
+    fk_pago INTEGER
 );
 
 CREATE TABLE lista_deseos(

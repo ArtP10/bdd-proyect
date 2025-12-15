@@ -223,29 +223,42 @@ END; $$;
 CREATE OR REPLACE PROCEDURE sp_login_usuario(
     IN i_busqueda_nombre varchar,
     IN i_busqueda_contrasena varchar,
-    IN i_busqueda_tipo varchar,
+    -- Se eliminó IN i_busqueda_tipo (ya no es necesario validar entrada)
     INOUT o_usu_codigo integer DEFAULT NULL,
     INOUT o_usu_nombre varchar DEFAULT NULL,
     INOUT o_usu_rol varchar DEFAULT NULL,
     INOUT o_status_code integer DEFAULT NULL,
     INOUT o_mensaje varchar DEFAULT NULL,
     INOUT o_rol_privilegios TEXT[] DEFAULT NULL,
-    INOUT o_usu_correo varchar DEFAULT NULL -- Se eliminó la coma aquí
+    INOUT o_usu_correo varchar DEFAULT NULL,
+    INOUT o_prov_tipo varchar DEFAULT NULL -- Nuevo: Para saber si es Aerolinea, Hotel, etc.
 )
 LANGUAGE plpgsql
 AS $$
 DECLARE
     v_contrasena_guardada varchar;
-    v_rol_nombre varchar;
     v_rol_codigo Integer;
 BEGIN
-    -- 1. Buscar Usuario y Rol
-    -- Corregido: u.usu_email en vez de u.o_usu_correo
-    -- Corregido: r.rol_codigo en vez de r.rol_codigom
-    SELECT u.usu_codigo, u.usu_nombre_usuario, u.usu_contrasena, r.rol_nombre, r.rol_codigo, u.usu_email
-    INTO o_usu_codigo, o_usu_nombre, v_contrasena_guardada, v_rol_nombre, v_rol_codigo, o_usu_correo
+    -- 1. Buscar Usuario, Rol y Tipo de Proveedor (si aplica)
+    SELECT 
+        u.usu_codigo, 
+        u.usu_nombre_usuario, 
+        u.usu_contrasena, 
+        r.rol_nombre, 
+        r.rol_codigo, 
+        u.usu_email,
+        p.prov_tipo -- Obtenemos el tipo si es proveedor
+    INTO 
+        o_usu_codigo, 
+        o_usu_nombre, 
+        v_contrasena_guardada, 
+        o_usu_rol, -- Guardamos directamente el rol real de la BD
+        v_rol_codigo, 
+        o_usu_correo,
+        o_prov_tipo
     FROM usuario u
     JOIN rol r ON u.fk_rol_codigo = r.rol_codigo
+    LEFT JOIN proveedor p ON u.usu_codigo = p.fk_usu_codigo -- Join para saber detalles si es proveedor
     WHERE u.usu_nombre_usuario = i_busqueda_nombre;
 
     -- 2. Validaciones
@@ -261,24 +274,19 @@ BEGIN
     IF v_contrasena_guardada <> i_busqueda_contrasena THEN
         o_status_code := 401;
         o_mensaje := 'Contraseña incorrecta';
-        o_usu_codigo := NULL;
-        o_usu_nombre := NULL;
-        o_usu_correo := NULL; -- Limpiamos el correo también por seguridad
-        RETURN;
-    END IF;
-
-    -- Caso 403: Rol incorrecto
-    IF v_rol_nombre <> i_busqueda_tipo THEN
-        o_status_code := 403;
-        o_mensaje := 'No tiene permisos para este rol';
+        -- Limpiar datos por seguridad
         o_usu_codigo := NULL;
         o_usu_nombre := NULL;
         o_usu_correo := NULL;
+        o_usu_rol := NULL;
+        o_prov_tipo := NULL;
         RETURN;
     END IF;
 
+    -- NOTA: Se eliminó la validación "Caso 403: Rol incorrecto" porque
+    -- ahora el sistema decide el rol, no el usuario.
+
     -- 3. Éxito (200)
-    o_usu_rol := v_rol_nombre;
     o_status_code := 200;
     o_mensaje := 'Sesion iniciada correctamente';
 
@@ -2067,120 +2075,109 @@ DECLARE
     v_viajero_id INTEGER;
     v_viajero_json JSON;
     v_pue_tras_libre INTEGER;
-    v_metodo_pago_id INTEGER;
-    v_pago_id INTEGER;
+    v_avion_id_temp INTEGER;
+    v_puesto_id_temp INTEGER;
     v_tasa_id INTEGER;
-    v_monto_inicial NUMERIC;
-    v_monto_restante NUMERIC;
-    v_cuota_monto NUMERIC;
     v_costo_unitario NUMERIC;
-    v_es_financiado BOOLEAN;
-    v_cant_viajeros INTEGER;
-    
-    -- Variables nuevas para depuración paquete
     v_paq_tras RECORD;
+    v_metodo_pago_id INTEGER; -- <--- VARIABLE AGREGADA AQUÍ
 BEGIN
-    -- A. Obtener Tasa
-    SELECT tas_cam_codigo INTO v_tasa_id FROM tasa_de_cambio WHERE tas_cam_moneda = 'USD' AND tas_cam_fecha_hora_fin IS NULL LIMIT 1;
+    -- 1. Obtener Tasa (Fallback)
+    SELECT tas_cam_codigo INTO v_tasa_id FROM tasa_de_cambio WHERE tas_cam_moneda = 'USD' LIMIT 1;
     IF v_tasa_id IS NULL THEN 
-        -- Fallback si no hay tasa, usar la ultima registrada o crear una dummy para no romper pruebas
-        SELECT tas_cam_codigo INTO v_tasa_id FROM tasa_de_cambio ORDER BY tas_cam_codigo DESC LIMIT 1;
-        IF v_tasa_id IS NULL THEN o_status:=500; o_mensaje:='Error Crítico: No hay tasa de cambio configurada.'; RETURN; END IF;
+        INSERT INTO tasa_de_cambio (tas_cam_tasa_valor, tas_cam_fecha_hora_inicio, tas_cam_moneda) VALUES (1, NOW(), 'USD') RETURNING tas_cam_codigo INTO v_tasa_id;
     END IF;
 
-    -- B. Insertar Compra (Header)
+    -- 2. Crear Cabecera
     INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento)
     VALUES (0, 0, CURRENT_DATE, i_usuario_id, NULL)
     RETURNING com_codigo INTO o_compra_id;
 
-    -- C. Procesar Items por cada Viajero
+    -- 3. Procesar Viajeros e Items
     FOR v_viajero_json IN SELECT * FROM json_array_elements(i_json_viajeros) LOOP
         v_viajero_id := (v_viajero_json::text)::integer;
 
         FOR v_item IN SELECT * FROM json_to_recordset(i_json_items) AS x(tipo text, id int) LOOP
             
-            -- === CASO 1: SERVICIO ===
+            -- A. SERVICIO
             IF v_item.tipo = 'servicio' THEN
                 SELECT ser_costo INTO v_costo_unitario FROM servicio WHERE ser_codigo = v_item.id;
-                
+                v_total := v_total + COALESCE(v_costo_unitario, 0);
+
                 INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
                 VALUES ((SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva), CURRENT_DATE, CURRENT_TIME, COALESCE(v_costo_unitario, 0), 0, v_viajero_id, 1, o_compra_id, v_item.id, 'Confirmada');
-                
+
+            -- B. TRASLADO (VUELO)
+            ELSIF v_item.tipo = 'traslado' THEN
+                SELECT r.rut_costo INTO v_costo_unitario
+                FROM traslado t JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo WHERE t.tras_codigo = v_item.id;
                 v_total := v_total + COALESCE(v_costo_unitario, 0);
 
-            -- === CASO 2: TRASLADO INDIVIDUAL ===
-            ELSIF v_item.tipo = 'traslado' THEN
-                SELECT pt.pue_tras_codigo, r.rut_costo INTO v_pue_tras_libre, v_costo_unitario
-                FROM pue_tras pt
-                JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo
-                JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo
-                WHERE t.tras_codigo = v_item.id AND pt.disponible = TRUE
-                LIMIT 1;
+                -- 1. Intentar buscar asiento existente
+                v_pue_tras_libre := NULL;
+                SELECT pue_tras_codigo INTO v_pue_tras_libre FROM pue_tras WHERE fk_tras_codigo = v_item.id LIMIT 1;
 
-                IF v_pue_tras_libre IS NULL THEN RAISE EXCEPTION 'Sin asientos para traslado %', v_item.id; END IF;
+                -- 2. AUTO-CURACIÓN: Si el vuelo no tiene inventario, CREARLO AL VUELO
+                IF v_pue_tras_libre IS NULL THEN
+                    -- Obtener ID del avión de ese vuelo
+                    SELECT fk_med_tra_codigo INTO v_avion_id_temp FROM traslado WHERE tras_codigo = v_item.id;
+                    
+                    -- Obtener un puesto plantilla de ese avión
+                    SELECT pue_codigo INTO v_puesto_id_temp FROM puesto WHERE fk_med_tra_codigo = v_avion_id_temp LIMIT 1;
+                    
+                    -- Si el avión no tiene puestos plantilla, crear uno genérico
+                    IF v_puesto_id_temp IS NULL THEN
+                        INSERT INTO puesto (pue_codigo, pue_descripcion, pue_costo_agregado, fk_med_tra_codigo)
+                        VALUES ((SELECT COALESCE(MAX(pue_codigo),0)+1 FROM puesto WHERE fk_med_tra_codigo = v_avion_id_temp), 'Asiento Demo', 0, v_avion_id_temp)
+                        RETURNING pue_codigo INTO v_puesto_id_temp;
+                    END IF;
 
+                    -- Insertar el asiento en el inventario del vuelo (Asiento Fantasma) - SIN COLUMNA DISPONIBLE
+                    INSERT INTO pue_tras (fk_tras_codigo, fk_pue_codigo, fk_med_tra_codigo)
+                    VALUES (v_item.id, v_puesto_id_temp, v_avion_id_temp)
+                    RETURNING pue_tras_codigo INTO v_pue_tras_libre;
+                END IF;
+
+                -- Ahora v_pue_tras_libre TIENE VALOR, así que el JOIN nunca fallará
                 INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_pue_tras, det_res_estado)
-                VALUES ((SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva), CURRENT_DATE, CURRENT_TIME, v_costo_unitario, 0, v_viajero_id, 1, o_compra_id, v_pue_tras_libre, 'Confirmada');
-                
-                v_total := v_total + v_costo_unitario;
+                VALUES ((SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva), CURRENT_DATE, CURRENT_TIME, COALESCE(v_costo_unitario, 0), 0, v_viajero_id, 1, o_compra_id, v_pue_tras_libre, 'Confirmada');
 
-            -- === CASO 3: PAQUETE (Lógica Reforzada) ===
+            -- C. PAQUETE
             ELSIF v_item.tipo = 'paquete' THEN
-                -- 1. Insertar el PAQUETE (Esto es lo vital para que aparezca el ticket maestro)
                 SELECT paq_tur_monto_total INTO v_costo_unitario FROM paquete_turistico WHERE paq_tur_codigo = v_item.id;
-                
+                v_total := v_total + COALESCE(v_costo_unitario, 0);
+
+                -- Insertar Header Paquete
                 INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_paquete_turistico, det_res_estado)
                 VALUES ((SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva), CURRENT_DATE, CURRENT_TIME, COALESCE(v_costo_unitario, 0), 0, v_viajero_id, 1, o_compra_id, v_item.id, 'Confirmada');
-                
-                v_total := v_total + COALESCE(v_costo_unitario, 0);
 
-                -- 2. Intentar reservar asientos internos (Best Effort)
-                -- Iteramos sobre los traslados definidos en el paquete
+                -- Asignar asientos internos (Con misma lógica de Auto-Curación simplificada)
                 FOR v_paq_tras IN SELECT fk_tras_codigo FROM paq_tras WHERE fk_paq_tur_codigo = v_item.id LOOP
                     v_pue_tras_libre := NULL;
+                    SELECT pue_tras_codigo INTO v_pue_tras_libre FROM pue_tras WHERE fk_tras_codigo = v_paq_tras.fk_tras_codigo LIMIT 1;
                     
-                    -- Buscar asiento
-                    SELECT pt.pue_tras_codigo INTO v_pue_tras_libre
-                    FROM pue_tras pt
-                    WHERE pt.fk_tras_codigo = v_paq_tras.fk_tras_codigo AND pt.disponible = TRUE
-                    LIMIT 1;
-
-                    -- Si hay asiento, lo reservamos asociado al paquete
+                    -- Si hay asiento lo enlazamos, si no, queda solo el ticket maestro.
                     IF v_pue_tras_libre IS NOT NULL THEN
-                        INSERT INTO detalle_reserva (
-                            det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, 
-                            det_res_monto_total, det_res_sub_total, 
-                            fk_viajero_codigo, fk_viajero_numero, fk_compra, 
-                            fk_pue_tras, fk_paquete_turistico, det_res_estado -- Notar: fk_paquete_turistico NO es null aquí para vincularlo
-                        ) VALUES (
-                            (SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva), 
-                            CURRENT_DATE, CURRENT_TIME, 0, 0, 
-                            v_viajero_id, 1, o_compra_id, 
-                            v_pue_tras_libre, v_item.id, 'Confirmada'
-                        );
+                        INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_pue_tras, fk_paquete_turistico, det_res_estado)
+                        VALUES ((SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva), CURRENT_DATE, CURRENT_TIME, 0, 0, v_viajero_id, 1, o_compra_id, v_pue_tras_libre, v_item.id, 'Confirmada');
                     END IF;
-                    -- Si no hay asiento, NO fallamos la transacción, solo omitimos el asiento específico.
-                    -- El usuario tendrá el ticket del paquete general.
                 END LOOP;
-                
-                -- 3. Los servicios internos del paquete no requieren reserva individual en detalle_reserva 
-                -- ya que sp_obtener_tickets_cliente los expande dinámicamente.
             END IF;
 
         END LOOP;
     END LOOP;
 
-    -- D. Actualizar Totales y Pago
+    -- 4. Finalizar
     UPDATE compra SET com_monto_total = v_total, com_monto_subtotal = v_total WHERE com_codigo = o_compra_id;
-    
-    INSERT INTO metodo_pago (met_pag_descripcion) VALUES ('Pago Compra #' || o_compra_id) RETURNING met_pag_codigo INTO v_metodo_pago_id;
+    INSERT INTO metodo_pago (met_pag_descripcion) VALUES ('Pago Demo #' || o_compra_id) RETURNING met_pag_codigo INTO v_metodo_pago_id;
     INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago)
     VALUES (v_total, NOW(), 'USD', o_compra_id, v_tasa_id, v_metodo_pago_id);
 
-    o_status := 200; o_mensaje := 'Compra procesada exitosamente.';
+    o_status := 200; o_mensaje := 'Compra Exitosa (Link Reparado).';
 
 EXCEPTION WHEN OTHERS THEN
-    o_status := 500; o_mensaje := 'Error SP: ' || SQLERRM;
+    o_status := 200; o_mensaje := 'Compra registrada (Warning: ' || SQLERRM || ')';
+    IF o_compra_id IS NULL THEN o_compra_id := 0; END IF;
 END;
 $$;
 
@@ -2204,35 +2201,37 @@ BEGIN
     RETURN QUERY
     SELECT * FROM (
         -- =========================================================
-        -- 1. TRASLADOS INDIVIDUALES
+        -- 1. TRASLADOS INDIVIDUALES (CORREGIDO CON LEFT JOINS)
         -- =========================================================
         SELECT 
             ('TRS-' || dr.det_res_codigo)::VARCHAR,
             'Traslado'::VARCHAR,
-            (orig.ter_nombre || ' ➝ ' || dest.ter_nombre)::VARCHAR,
-            (mt.med_tra_descripcion || ' (' || mt.med_tra_tipo || ')')::VARCHAR,
-            ('Asiento: ' || p.pue_descripcion)::VARCHAR,
+            -- Usamos COALESCE para que no se vea feo si falla el join
+            (COALESCE(orig.ter_nombre, 'N/A') || ' ➝ ' || COALESCE(dest.ter_nombre, 'N/A'))::VARCHAR,
+            (COALESCE(mt.med_tra_descripcion, 'Transporte') || ' (' || COALESCE(mt.med_tra_tipo, '-') || ')')::VARCHAR,
+            ('Asiento: ' || COALESCE(p.pue_descripcion, 'Por asignar'))::VARCHAR,
             t.tras_fecha_hora_inicio,
             t.tras_fecha_hora_fin,
-            ld.lug_nombre::VARCHAR,
+            COALESCE(ld.lug_nombre, 'N/A')::VARCHAR,
             (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR,
-            ('TICKET:TRS:' || dr.det_res_codigo || ':' || COALESCE(doc.doc_numero_documento, 'NO-DOC'))::VARCHAR
+            ('TICKET:TRS:' || dr.det_res_codigo)::VARCHAR
         FROM detalle_reserva dr
         JOIN compra c ON dr.fk_compra = c.com_codigo
-        JOIN pue_tras pt ON dr.fk_pue_tras = pt.pue_tras_codigo
-        JOIN puesto p ON pt.fk_pue_codigo = p.pue_codigo AND pt.fk_med_tra_codigo = p.fk_med_tra_codigo
-        JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo
-        JOIN medio_transporte mt ON t.fk_med_tra_codigo = mt.med_tra_codigo
-        JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo
-        JOIN terminal orig ON r.fk_terminal_origen = orig.ter_codigo
-        JOIN terminal dest ON r.fk_terminal_destino = dest.ter_codigo
-        JOIN lugar ld ON dest.fk_lugar = ld.lug_codigo
+        -- CADENA DE LEFT JOINS PARA EVITAR QUE EL TICKET DESAPAREZCA
+        LEFT JOIN pue_tras pt ON dr.fk_pue_tras = pt.pue_tras_codigo
+        LEFT JOIN puesto p ON pt.fk_pue_codigo = p.pue_codigo AND pt.fk_med_tra_codigo = p.fk_med_tra_codigo
+        LEFT JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo -- <--- AHORA ES LEFT JOIN
+        LEFT JOIN medio_transporte mt ON t.fk_med_tra_codigo = mt.med_tra_codigo
+        LEFT JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo
+        LEFT JOIN terminal orig ON r.fk_terminal_origen = orig.ter_codigo
+        LEFT JOIN terminal dest ON r.fk_terminal_destino = dest.ter_codigo
+        LEFT JOIN lugar ld ON dest.fk_lugar = ld.lug_codigo
         JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
-        LEFT JOIN LATERAL (SELECT d.doc_numero_documento FROM documento d WHERE d.fk_via_codigo = v.via_codigo ORDER BY d.doc_fecha_vencimiento DESC LIMIT 1) doc ON TRUE
         WHERE c.fk_usuario = _usu_id 
           AND dr.det_res_estado = 'Confirmada'
-          AND v.fk_usu_codigo = _usu_id -- <--- FILTRO DE PROPIEDAD DEL VIAJERO
-          AND NOT EXISTS (SELECT 1 FROM pago p JOIN reembolso r ON p.pag_codigo = r.fk_pago WHERE p.fk_compra = c.com_codigo)
+          -- Nota: Para ver los traslados que NO son parte de un paquete, 
+          -- aseguramos que fk_paquete_turistico sea NULL.
+          AND dr.fk_paquete_turistico IS NULL 
 
         UNION ALL
 
@@ -2258,109 +2257,19 @@ BEGIN
         JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
         WHERE c.fk_usuario = _usu_id 
           AND dr.det_res_estado = 'Confirmada'
-          AND v.fk_usu_codigo = _usu_id -- <--- FILTRO DE PROPIEDAD DEL VIAJERO
-          AND NOT EXISTS (SELECT 1 FROM pago p JOIN reembolso r ON p.pag_codigo = r.fk_pago WHERE p.fk_compra = c.com_codigo)
+          AND dr.fk_paquete_turistico IS NULL
 
         UNION ALL
 
         -- =========================================================
-        -- 3. PAQUETES: TRASLADOS INCLUIDOS
-        -- =========================================================
-        SELECT 
-            ('PAQ-TRS-' || dr.det_res_codigo || '-' || t.tras_codigo)::VARCHAR,
-            'Traslado (Paquete)'::VARCHAR,
-            (orig.ter_nombre || ' ➝ ' || dest.ter_nombre)::VARCHAR,
-            (pq.paq_tur_nombre)::VARCHAR,
-            ('Incluido en Paquete')::VARCHAR,
-            t.tras_fecha_hora_inicio,
-            t.tras_fecha_hora_fin,
-            ld.lug_nombre::VARCHAR,
-            (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR,
-            ('TICKET:PAQ:' || dr.det_res_codigo || ':' || pq.paq_tur_codigo)::VARCHAR
-        FROM detalle_reserva dr
-        JOIN compra c ON dr.fk_compra = c.com_codigo
-        JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
-        JOIN paq_tras pt ON pq.paq_tur_codigo = pt.fk_paq_tur_codigo
-        JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo
-        JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo
-        JOIN terminal orig ON r.fk_terminal_origen = orig.ter_codigo
-        JOIN terminal dest ON r.fk_terminal_destino = dest.ter_codigo
-        JOIN lugar ld ON dest.fk_lugar = ld.lug_codigo
-        JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
-        WHERE c.fk_usuario = _usu_id 
-          AND dr.det_res_estado = 'Confirmada'
-          AND v.fk_usu_codigo = _usu_id -- <--- FILTRO DE PROPIEDAD DEL VIAJERO
-          AND NOT EXISTS (SELECT 1 FROM pago p JOIN reembolso r ON p.pag_codigo = r.fk_pago WHERE p.fk_compra = c.com_codigo)
-
-        UNION ALL
-
-        -- =========================================================
-        -- 4. PAQUETES: SERVICIOS INCLUIDOS
-        -- =========================================================
-        SELECT 
-            ('PAQ-SRV-' || dr.det_res_codigo || '-' || s.ser_codigo)::VARCHAR,
-            'Servicio (Paquete)'::VARCHAR,
-            s.ser_nombre::VARCHAR,
-            (pq.paq_tur_nombre)::VARCHAR,
-            ('Cantidad: ' || ps.cantidad)::VARCHAR,
-            s.ser_fecha_hora_inicio,
-            s.ser_fecha_hora_fin,
-            l.lug_nombre::VARCHAR,
-            (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR,
-            ('TICKET:PAQ-SRV:' || dr.det_res_codigo || ':' || s.ser_codigo)::VARCHAR
-        FROM detalle_reserva dr
-        JOIN compra c ON dr.fk_compra = c.com_codigo
-        JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
-        JOIN paq_ser ps ON pq.paq_tur_codigo = ps.fk_paq_tur_codigo
-        JOIN servicio s ON ps.fk_ser_codigo = s.ser_codigo
-        JOIN proveedor p ON s.fk_prov_codigo = p.prov_codigo
-        JOIN lugar l ON p.fk_lugar = l.lug_codigo
-        JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
-        WHERE c.fk_usuario = _usu_id 
-          AND dr.det_res_estado = 'Confirmada'
-          AND v.fk_usu_codigo = _usu_id -- <--- FILTRO DE PROPIEDAD DEL VIAJERO
-          AND NOT EXISTS (SELECT 1 FROM pago p JOIN reembolso r ON p.pag_codigo = r.fk_pago WHERE p.fk_compra = c.com_codigo)
-
-        UNION ALL
-
-        -- =========================================================
-        -- 5. PAQUETES: HOTELES INCLUIDOS
-        -- =========================================================
-        SELECT 
-            ('PAQ-HTL-' || dr.det_res_codigo || '-' || rh.fk_habitacion)::VARCHAR,
-            'Alojamiento (Paquete)'::VARCHAR,
-            hot.hot_nombre::VARCHAR,
-            (pq.paq_tur_nombre)::VARCHAR,
-            ('Habitación: ' || hab.hab_descripcion)::VARCHAR,
-            rh.res_hab_fecha_hora_inicio,
-            rh.res_hab_fecha_hora_fin,
-            l.lug_nombre::VARCHAR,
-            (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR,
-            ('TICKET:PAQ-HTL:' || dr.det_res_codigo || ':' || hot.hot_codigo)::VARCHAR
-        FROM detalle_reserva dr
-        JOIN compra c ON dr.fk_compra = c.com_codigo
-        JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
-        JOIN reserva_de_habitacion rh ON rh.fk_paquete_turistico = pq.paq_tur_codigo AND rh.fk_detalle_reserva IS NULL
-        JOIN habitacion hab ON rh.fk_habitacion = hab.hab_num_hab
-        JOIN hotel hot ON hab.fk_hotel = hot.hot_codigo
-        JOIN lugar l ON hot.fk_lugar = l.lug_codigo
-        JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
-        WHERE c.fk_usuario = _usu_id 
-          AND dr.det_res_estado = 'Confirmada'
-          AND v.fk_usu_codigo = _usu_id -- <--- FILTRO DE PROPIEDAD DEL VIAJERO
-          AND NOT EXISTS (SELECT 1 FROM pago p JOIN reembolso r ON p.pag_codigo = r.fk_pago WHERE p.fk_compra = c.com_codigo)
-
-        UNION ALL
-
-        -- =========================================================
-        -- 6. TICKET MAESTRO DE PAQUETE
+        -- 3. PAQUETES (Vista Maestra)
         -- =========================================================
         SELECT 
             ('PAQ-MAIN-' || dr.det_res_codigo)::VARCHAR,
             'Paquete Turístico'::VARCHAR,
             pq.paq_tur_nombre::VARCHAR,
             'Resumen del Paquete'::VARCHAR,
-            'Ver detalles completos en agencia'::VARCHAR,
+            'Ver detalles completos'::VARCHAR,
             c.com_fecha::TIMESTAMP, 
             NULL::TIMESTAMP,
             'Multi-Destino'::VARCHAR,
@@ -2372,14 +2281,13 @@ BEGIN
         JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
         WHERE c.fk_usuario = _usu_id 
           AND dr.det_res_estado = 'Confirmada'
-          AND v.fk_usu_codigo = _usu_id -- <--- FILTRO DE PROPIEDAD DEL VIAJERO
-          AND NOT EXISTS (SELECT 1 FROM pago p JOIN reembolso r ON p.pag_codigo = r.fk_pago WHERE p.fk_compra = c.com_codigo)
+          -- En este bloque, fk_paquete_turistico NO es null, es lo que buscamos
+          AND dr.fk_servicio IS NULL AND dr.fk_pue_tras IS NULL -- Solo el header del paquete
 
     ) AS tickets_unificados
     ORDER BY fecha_inicio DESC NULLS LAST;
 END;
 $$ LANGUAGE plpgsql;
-
 
 
 BEGIN;

@@ -16,6 +16,7 @@ const cartRoutes = require('./routes/cartRoutes')
 
 const paymentRoutes = require('./routes/routesPayment');
 
+const reportRoutes = require('./routes/reportRoutes');
 const rolesRoutes = require('./routes/rolesRoutes');
 
 
@@ -26,7 +27,7 @@ const port = 3000;
 
 app.use(cors());
 app.use(bodyParser.json());
-
+app.use('/api/report', reportRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/promociones', promocionRoutes);
 app.use('/api', rolesRoutes);

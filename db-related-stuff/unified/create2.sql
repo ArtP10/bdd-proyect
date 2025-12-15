@@ -69,7 +69,9 @@ CREATE TABLE restaurante(
     res_descripcion VARCHAR(100) NOT NULL,
     res_anos_servicio INTEGER NOT NULL DEFAULT 0,
     res_valoracion NUMERIC(10,2) NOT NULL DEFAULT 0,
-    fk_lugar INTEGER NOT NULL
+    fk_lugar INTEGER NOT NULL,
+    fk_promocion INTEGER,
+    fk_telefono integer
 );
 
 CREATE TABLE telefono (

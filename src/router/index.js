@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router';
 
 // Imports de componentes
-// Asegúrate de usar '@/' para referenciar 'src/'
 import Login from '@/views/general/Login.vue';
 import SelfRegisterClient from '@/views/client/SelfRegisterClient.vue';
 import ClientDashboard from '@/views/client/ClientDashboard.vue';
@@ -10,13 +9,11 @@ import ProviderAirlineDashboard from '@/views/provider/ProviderAirlineDashboard.
 import NotDevelopedYet from '@/views/general/NotDevelopedYet.vue';
 import HomePage from '@/views/general/HomePage.vue';
 import Cart from '@/views/client/Cart.vue';
-
-// IMPORTANTE: Asegúrate de que este nombre de archivo coincida con el que creaste.
-// Si copiaste mi código anterior, el archivo se llamaba 'AdminPromociones.vue'.
-// Si lo llamaste 'AdminGestionPromociones.vue', déjalo así.
-import Promotions from '@/views/admin/AdminGestionPromociones.vue'; 
-// CORRECCIÓN AQUÍ: Agregada la barra '/' después de la arroba
 import SearchResults from '@/views/general/SearchResults.vue';
+
+// IMPORTANTE: Aquí estás importando AdminGestionPromociones.vue
+// Asegúrate de que tu archivo en la carpeta views/admin se llame EXACTAMENTE así.
+import Promotions from '@/views/admin/AdminGestionPromociones.vue'; 
 
 const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
@@ -60,26 +57,21 @@ const router = createRouter({
             path: '/results', 
             name: 'results', 
             component: SearchResults,
-            // Esta función permite pasar los query params (?destino=x) como props al componente
             props: route => ({ query: route.query }) 
-        },
-        {
-            path:'/providers/airlines/dashboard',
-            name:'providers-airlines-dashboard',
-            component:ProviderAirlineDashboard
         },
         
         // --- RUTAS DE PROMOCIONES ---
-        // Solo necesitas esta ruta. El "Builder" ahora es un modal dentro de ella.
         {
             path:'/admin/promotions',
             name:'admin-promotions',
-            component:Promotions
+            component:Promotions,
+        },
+        // -------------------------------------------
+        {
             path:'/cart',
             name:'cart',
             component:Cart
         }
-        // SE ELIMINÓ LA RUTA '/promotions/build-promotion/:prom_codigo' PORQUE YA NO ES NECESARIA
     ]
 })
 

@@ -23,8 +23,8 @@
           <td>{{ p.anos_antiguedad }} años</td>
           <td>{{ p.usu_nombre_usuario }}</td>
           <td>
-            <button class="btn-sm">Editar</button>
-            <button class="btn-danger-sm">Eliminar</button>
+            <button class="btn-sm" @click="openEditModal(p)">Editar</button>
+            <button class="btn-danger-sm" @click="deleteProvider(p.prov_codigo)">Eliminar</button>
           </td>
         </tr>
       </tbody>
@@ -32,7 +32,7 @@
 
     <div v-if="showModal" class="modal-overlay">
       <div class="modal-content">
-        <h3>Registrar Nuevo Proveedor</h3>
+        <h3>{{ isEditing ? 'Editar Proveedor' : 'Registrar Nuevo Proveedor' }}</h3>
         <form @submit.prevent="saveProvider">
           
           <div class="form-section">
@@ -78,13 +78,14 @@
             </div>
             <div class="form-group">
                 <label>Contraseña</label>
-                <input type="password" v-model="form.usu_pass" required />
+                <input type="password" v-model="form.usu_pass" :required="!isEditing" :placeholder="isEditing ? 'Dejar vacío para no cambiar' : ''" :disabled="isEditing"/>
+                <small v-if="isEditing" style="color:gray; font-size:0.8em">La edición de contraseña no está permitida aquí.</small>
             </div>
           </div>
 
           <div class="modal-actions">
-            <button type="submit" class="btn-primary">Registrar</button>
-            <button type="button" @click="showModal = false" class="btn-secondary">Cancelar</button>
+            <button type="submit" class="btn-primary">{{ isEditing ? 'Guardar Cambios' : 'Registrar' }}</button>
+            <button type="button" @click="closeModal" class="btn-secondary">Cancelar</button>
           </div>
         </form>
       </div>
@@ -99,22 +100,27 @@ import { ref, reactive, onMounted } from 'vue';
 const providers = ref([]);
 const locations = ref([]);
 const showModal = ref(false);
+const isEditing = ref(false); // Estado para saber si editamos
+const currentEditId = ref(null); // ID del proveedor que se edita
+
 const userSession = JSON.parse(localStorage.getItem('user_session') || '{}');
 
 const form = reactive({
     pro_nombre: '', 
-    prov_fecha_creacion: '', // Variable cambiada a fecha
+    prov_fecha_creacion: '',
     pro_tipo: 'Aerolinea', 
     fk_lugar: '',
     usu_nombre: '', usu_email: '', usu_pass: ''
 });
+
 const todayDate = new Date().toISOString().split('T')[0];
+
 const formatDate = (dateString) => {
     if(!dateString) return '';
     return new Date(dateString).toLocaleDateString();
 };
 
-// --- API ---
+// --- API FETCH ---
 const fetchLocations = async () => {
     try {
         const res = await fetch('http://localhost:3000/api/users/locations/list');
@@ -131,31 +137,103 @@ const fetchProviders = async () => {
     } catch(e) { console.error(e); }
 };
 
+// --- ACCIONES CRUD ---
+
+// 1. GUARDAR (CREAR O EDITAR)
 const saveProvider = async () => {
     try {
-        const payload = { ...form, admin_id: userSession.user_id };
-        const res = await fetch('http://localhost:3000/api/users/providers/create', {
-            method: 'POST',
+        // Determinamos URL y Método según el modo
+        const url = isEditing.value 
+            ? 'http://localhost:3000/api/users/providers/update' 
+            : 'http://localhost:3000/api/users/providers/create';
+        
+        const method = isEditing.value ? 'PUT' : 'POST';
+        
+        const payload = { 
+            ...form, 
+            admin_id: userSession.user_id,
+            // Si estamos editando, agregamos el ID del proveedor
+            prov_codigo: isEditing.value ? currentEditId.value : undefined
+        };
+
+        const res = await fetch(url, {
+            method: method,
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(payload)
         });
         const data = await res.json();
         
         if(data.success) {
-            alert('Proveedor creado');
-            showModal.value = false;
+            alert(isEditing.value ? 'Proveedor actualizado' : 'Proveedor creado');
+            closeModal();
             fetchProviders();
-            // Limpiar form
-            Object.assign(form, { pro_nombre: '', prov_fecha_creacion: '', pro_tipo: 'Aereolinea', fk_lugar: '', usu_nombre: '', usu_email: '', usu_pass: '' });
         } else {
             alert('Error: ' + data.message);
         }
     } catch(e) { console.error(e); }
 };
 
+// 2. ELIMINAR
+const deleteProvider = async (id) => {
+    if(!confirm('¿Estás seguro de eliminar este proveedor? Se eliminará también su usuario asociado.')) return;
+
+    try {
+        const res = await fetch('http://localhost:3000/api/users/providers/delete', {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ 
+                admin_id: userSession.user_id, 
+                prov_codigo: id 
+            })
+        });
+        const data = await res.json();
+        
+        if(data.success) {
+            alert('Proveedor eliminado');
+            fetchProviders();
+        } else {
+            alert('Error al eliminar: ' + data.message);
+        }
+    } catch(e) { console.error(e); }
+};
+
+// --- MANEJO DEL MODAL ---
+
 const openCreateModal = () => {
+    isEditing.value = false;
+    currentEditId.value = null;
+    resetForm();
     fetchLocations();
     showModal.value = true;
+};
+
+const openEditModal = (provider) => {
+    isEditing.value = true;
+    currentEditId.value = provider.prov_codigo;
+    fetchLocations(); // Asegurar que tenemos los lugares
+    
+    // Mapear datos de la fila al formulario
+    // Nota: provider.prov_fecha_creacion puede venir en formato ISO completo, lo cortamos para el input date
+    Object.assign(form, {
+        pro_nombre: provider.prov_nombre,
+        prov_fecha_creacion: provider.prov_fecha_creacion ? provider.prov_fecha_creacion.split('T')[0] : '',
+        pro_tipo: provider.prov_tipo,
+        fk_lugar: provider.fk_lugar, // Asegúrate que tu API list devuelva fk_lugar
+        usu_nombre: provider.usu_nombre_usuario,
+        usu_email: provider.usu_email,
+        usu_pass: '' // No llenamos password al editar
+    });
+    
+    showModal.value = true;
+};
+
+const closeModal = () => {
+    showModal.value = false;
+    resetForm();
+};
+
+const resetForm = () => {
+    Object.assign(form, { pro_nombre: '', prov_fecha_creacion: '', pro_tipo: 'Aerolinea', fk_lugar: '', usu_nombre: '', usu_email: '', usu_pass: '' });
 };
 
 onMounted(() => {
@@ -164,16 +242,17 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* (Tus estilos se mantienen igual) */
 .actions-bar { margin-bottom: 20px; text-align: right; }
 .data-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
 .data-table th, .data-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
 .data-table th { background-color: #f8fafc; font-weight: 600; color: #475569; }
 .badge { background: #e0f2fe; color: #0284c7; padding: 4px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; }
 .btn-primary { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; }
-.btn-sm { padding: 5px 10px; font-size: 0.8rem; margin-right: 5px; cursor: pointer; }
-.btn-danger-sm { padding: 5px 10px; font-size: 0.8rem; background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; cursor: pointer; }
+.btn-sm { padding: 5px 10px; font-size: 0.8rem; margin-right: 5px; cursor: pointer; background: #e2e8f0; border: none; border-radius: 4px; }
+.btn-danger-sm { padding: 5px 10px; font-size: 0.8rem; background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; cursor: pointer; border-radius: 4px; }
+.btn-secondary { background: #94a3b8; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; }
 
-/* Modal Styles Reuse */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; }
 .modal-content { background: white; padding: 25px; border-radius: 8px; width: 500px; max-height: 90vh; overflow-y: auto; }
 .form-section { margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #eee; }

@@ -10,6 +10,7 @@ import NotDevelopedYet from '@/views/general/NotDevelopedYet.vue';
 import HomePage from '@/views/general/HomePage.vue';
 import Cart from '@/views/client/Cart.vue';
 import SearchResults from '@/views/general/SearchResults.vue';
+import AdminReports from '@/views/admin/AdminReports.vue';
 
 // IMPORTANTE: Aquí estás importando AdminGestionPromociones.vue
 // Asegúrate de que tu archivo en la carpeta views/admin se llame EXACTAMENTE así.
@@ -65,6 +66,11 @@ const router = createRouter({
             path:'/admin/promotions',
             name:'admin-promotions',
             component:Promotions,
+        },
+        {
+            path: '/admin/reports',
+            name: 'admin-reports',
+            component: AdminReports
         },
         // -------------------------------------------
         {

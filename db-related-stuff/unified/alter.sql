@@ -20,6 +20,8 @@ ALTER TABLE proveedor ADD CONSTRAINT fk_usu_codigo_proveedor FOREIGN KEY (fk_usu
 
 ALTER TABLE hotel ADD CONSTRAINT fk_lugar_hotel FOREIGN KEY (fk_lugar) REFERENCES lugar(lug_codigo);
 ALTER TABLE restaurante ADD CONSTRAINT fk_lugar_restaurante FOREIGN KEY (fk_lugar) REFERENCES lugar(lug_codigo);
+alter table restaurante add constraint fk_prom_restaurante foreign key (fk_promocion) references promocion(prom_codigo);
+alter table restaurante add constraint fk_tel_restaurante foreign key (fk_telefono) references telefono(tel_codigo);
 
 ALTER TABLE telefono ADD CONSTRAINT fk_tel_proveedor FOREIGN KEY (fk_prov_codigo) REFERENCES proveedor(prov_codigo) ON DELETE CASCADE;
 ALTER TABLE telefono ADD CONSTRAINT fk_tel_hotel FOREIGN KEY (fk_hotel) REFERENCES hotel(hot_codigo) ON DELETE CASCADE;

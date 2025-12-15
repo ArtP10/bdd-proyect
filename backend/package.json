@@ -10,9 +10,13 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@jsreport/jsreport-chrome-pdf": "^4.4.0",
+    "@jsreport/jsreport-core": "^4.8.0",
+    "@jsreport/jsreport-handlebars": "^4.1.0",
     "body-parser": "^2.2.1",
     "cors": "^2.8.5",
     "express": "^5.1.0",
+    "pdfmake": "^0.2.20",
     "pg": "^8.16.3"
   }
 }

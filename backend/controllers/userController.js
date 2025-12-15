@@ -1,70 +1,76 @@
 const pool = require('../config/db');
 
+// userController.js (o el nombre que tenga tu archivo)
+
 const loginUser = async (req, res) => {
+    // 1. Ya no extraemos 'user_type' o 'role' del body
     const { username, password } = req.body;
-    
+
     try {
-        const client = await pool.connect();
-        try {
-            // 1. Buscamos el usuario y su rol
-            const userQuery = `
-                SELECT u.usu_codigo, u.usu_nombre_usuario, u.usu_contrasena, u.fk_rol_codigo, r.rol_nombre, u.fk_lugar
-                FROM usuario u
-                JOIN rol r ON u.fk_rol_codigo = r.rol_codigo
-                WHERE u.usu_nombre_usuario = $1
-            `;
-            const userResult = await client.query(userQuery, [username]);
+        // 2. Actualizamos la llamada SQL
+        // IMPORTANTE:
+        // - Quitamos el 3er parámetro de entrada (el rol).
+        // - Aseguramos tener los placeholders (null) para los parámetros INOUT nuevos.
+        
+        // Estructura del nuevo SP (10 parámetros en total):
+        // 1. IN nombre
+        // 2. IN contraseña
+        // 3. INOUT codigo (null)
+        // 4. INOUT nombre (null)
+        // 5. INOUT rol (null)
+        // 6. INOUT status (null)
+        // 7. INOUT mensaje (null)
+        // 8. INOUT privilegios (null)
+        // 9. INOUT correo (null)
+        // 10. INOUT prov_tipo (null) <-- NUEVO
 
-            if (userResult.rows.length === 0) {
-                return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
-            }
+        const response = await pool.query(
+            `CALL sp_login_usuario($1, $2, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)`,
+            [username, password]
+        );
 
-            const user = userResult.rows[0];
+        // Al usar 'CALL' con pg, los parámetros INOUT suelen devolverse en response.rows[0]
+        // NOTA: Dependiendo de tu configuración de pg, esto puede variar. 
+        // Si usas una versión reciente, devuelve un objeto con las columnas INOUT.
+        
+        const dbResult = response.rows[0];
 
-            // 2. Validación simple de contraseña (en producción usar bcrypt)
-            if (user.usu_contrasena !== password) {
-                return res.status(401).json({ success: false, message: 'Contraseña incorrecta' });
-            }
+        // Mapeamos la respuesta según los nombres de salida del SP
+        const statusCode = dbResult.o_status_code;
+        const message = dbResult.o_mensaje;
 
-            // 3. DATOS ADICIONALES SEGÚN ROL
-            let additionalData = {};
-
-            if (user.rol_nombre === 'Proveedor') {
-                // Buscamos el tipo de proveedor
-                const provQuery = 'SELECT prov_codigo, prov_tipo, prov_nombre FROM proveedor WHERE fk_usu_codigo = $1';
-                const provRes = await client.query(provQuery, [user.usu_codigo]);
-                
-                if (provRes.rows.length > 0) {
-                    additionalData = {
-                        provider_id: provRes.rows[0].prov_codigo,
-                        provider_type: provRes.rows[0].prov_tipo, // 'Aerolinea', 'Terrestre', etc.
-                        provider_name: provRes.rows[0].prov_nombre
-                    };
-                }
-            }
-
-            // 4. Respuesta Exitosa
-            res.status(200).json({
+        if (statusCode === 200) {
+            return res.status(200).json({
                 success: true,
-                message: 'Login exitoso',
+                message: message,
                 user: {
-                    user_id: user.usu_codigo,
-                    user_name: user.usu_nombre_usuario,
-                    role: user.rol_nombre,
-                    role_id: user.fk_rol_codigo,
-                    location_id: user.fk_lugar,
-                    ...additionalData // Esparcimos los datos del proveedor si existen
+                    id: dbResult.o_usu_codigo,
+                    name: dbResult.o_usu_nombre,
+                    email: dbResult.o_usu_correo,
+                    role: dbResult.o_usu_rol,          // El rol real que vino de la BD
+                    privileges: dbResult.o_rol_privilegios,
+                    provider_type: dbResult.o_prov_tipo // <--- IMPORTANTE: Enviarlo al front
                 }
             });
-
-        } finally {
-            client.release();
+        } else {
+            // Manejo de errores (401, 404, etc)
+            return res.status(statusCode || 400).json({
+                success: false,
+                message: message
+            });
         }
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ success: false, message: 'Error interno del servidor' });
+
+    } catch (error) {
+        console.error('Error en login:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error interno del servidor'
+        });
     }
 };
+
+
+
 
 const registerClient = async (req, res) => {
   // 1. Extraemos fk_lugar del body

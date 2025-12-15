@@ -3,6 +3,9 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 
 const userRoutes = require('./routes/userRoutes');
+const promocionRoutes = require('./routes/promocionRoutes');
+//Aqui agregaremos el resto de rutas que corresponden al resto de controladores
+//Puede haber un controlador para aerolineas, cruceros, paquetes, servicios, etc
 
 const paqTurRoutes = require('./routes/paq_turRoutes'); 
 
@@ -20,6 +23,8 @@ app.use(cors());
 app.use(bodyParser.json());
 
 app.use('/api/users', userRoutes);
+app.use('/api/promociones', promocionRoutes);
+
 app.use('/api/home',  homRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/payments', paymentRoutes);

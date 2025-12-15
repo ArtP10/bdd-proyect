@@ -1,4 +1,4 @@
-\-- Insertamos un lugar dummy (ej. Venezuela) para asignarselo al admin
+-- Insertamos un lugar dummy (ej. Venezuela) para asignarselo al admin
 INSERT INTO lugar (lug_nombre, lug_tipo, fk_lugar) 
 VALUES ('Venezuela', 'Pais', NULL); 
 -- Asumiremos que este insert genera el ID 1.

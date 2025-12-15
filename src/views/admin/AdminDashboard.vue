@@ -15,7 +15,6 @@
           <li :class="{ active: activeMenu === 'Promociones' }">
             <a href="#" @click.prevent="activeMenu = 'Promociones'">Promociones</a>
           </li>
-          </ul>
           <li :class="{ active: activeMenu === 'Paquetes' }">
             <a href="#" @click.prevent="activeMenu = 'Paquetes'">Paquetes Turísticos</a>
           </li>
@@ -35,7 +34,7 @@
       </div>
       <div v-if="activeMenu === 'Promociones'">
         <Promotions />
-
+      </div>
       <div v-if="activeMenu === 'Paquetes'">
         <AdminGestionPaquetes />
       </div>

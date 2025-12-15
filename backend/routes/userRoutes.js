@@ -31,5 +31,8 @@ router.post('/providers/routes/update', userController.updateRoute);
 router.post('/providers/travels/create', userController.createTravel);
 router.post('/providers/travels/update', userController.updateTravel);
 router.post('/my-tickets', userController.getMyTickets);
+router.put('/providers/update', userController.updateProvider);
+router.delete('/providers/delete', userController.deleteProvider);
+router.get('/miles/:id', userController.getUserMiles);
 
 module.exports = router;

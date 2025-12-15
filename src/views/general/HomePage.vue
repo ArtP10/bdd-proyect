@@ -11,7 +11,12 @@
            <button class="btn btn-primary btn-360" @click="goToDashboard">
              <i class="fa-solid fa-circle-user"></i> Perfil del Viajero 360°
            </button>
+
+           <button class="btn btn-primary btn-360" @click="goToCart">
+             <i class="fa-solid fa-circle-user"></i> Construir Itinerario
+           </button>
         </template>
+        
         
         <template v-else>
            <button class="btn btn-outline" @click="$router.push('/client/register')">
@@ -247,6 +252,10 @@ onMounted(async () => {
 // --- LÓGICA DE NAVEGACIÓN ---
 const goToDashboard = () => {
     router.push('/client/dashboard');
+};
+
+const goToCart = () => {
+    router.push('/cart');
 };
 
 const handleItemSelection = (item) => {

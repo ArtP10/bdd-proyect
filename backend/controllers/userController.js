@@ -3,72 +3,43 @@ const pool = require('../config/db');
 // userController.js (o el nombre que tenga tu archivo)
 
 const loginUser = async (req, res) => {
-    // 1. Ya no extraemos 'user_type' o 'role' del body
     const { username, password } = req.body;
 
     try {
-        // 2. Actualizamos la llamada SQL
-        // IMPORTANTE:
-        // - Quitamos el 3er parámetro de entrada (el rol).
-        // - Aseguramos tener los placeholders (null) para los parámetros INOUT nuevos.
-        
-        // Estructura del nuevo SP (10 parámetros en total):
-        // 1. IN nombre
-        // 2. IN contraseña
-        // 3. INOUT codigo (null)
-        // 4. INOUT nombre (null)
-        // 5. INOUT rol (null)
-        // 6. INOUT status (null)
-        // 7. INOUT mensaje (null)
-        // 8. INOUT privilegios (null)
-        // 9. INOUT correo (null)
-        // 10. INOUT prov_tipo (null) <-- NUEVO
-
+        // Llamamos al SP con 2 entradas y 9 salidas (Total 11 params)
         const response = await pool.query(
-            `CALL sp_login_usuario($1, $2, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)`,
+            `CALL sp_login_usuario($1, $2, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)`,
             [username, password]
         );
 
-        // Al usar 'CALL' con pg, los parámetros INOUT suelen devolverse en response.rows[0]
-        // NOTA: Dependiendo de tu configuración de pg, esto puede variar. 
-        // Si usas una versión reciente, devuelve un objeto con las columnas INOUT.
-        
         const dbResult = response.rows[0];
 
-        // Mapeamos la respuesta según los nombres de salida del SP
-        const statusCode = dbResult.o_status_code;
-        const message = dbResult.o_mensaje;
-
-        if (statusCode === 200) {
+        if (dbResult.o_status_code === 200) {
             return res.status(200).json({
                 success: true,
-                message: message,
+                message: dbResult.o_mensaje,
                 user: {
-                    id: dbResult.o_usu_codigo,
-                    name: dbResult.o_usu_nombre,
-                    email: dbResult.o_usu_correo,
-                    role: dbResult.o_usu_rol,          // El rol real que vino de la BD
+                    user_id: dbResult.o_usu_codigo,      // Ajustado para consistencia
+                    user_name: dbResult.o_usu_nombre,    // <--- IMPORTANTE: Tu vista espera user_name, no name
+                    user_email: dbResult.o_usu_correo,
+                    role: dbResult.o_usu_rol,
                     privileges: dbResult.o_rol_privilegios,
-                    provider_type: dbResult.o_prov_tipo // <--- IMPORTANTE: Enviarlo al front
+                    provider_type: dbResult.o_prov_tipo,
+                    provider_id: dbResult.o_prov_codigo  // <--- IMPORTANTE: Para que el proveedor no de error 500
                 }
             });
         } else {
-            // Manejo de errores (401, 404, etc)
-            return res.status(statusCode || 400).json({
+            return res.status(dbResult.o_status_code || 400).json({
                 success: false,
-                message: message
+                message: dbResult.o_mensaje
             });
         }
 
     } catch (error) {
         console.error('Error en login:', error);
-        return res.status(500).json({
-            success: false,
-            message: 'Error interno del servidor'
-        });
+        return res.status(500).json({ success: false, message: 'Error interno del servidor' });
     }
 };
-
 
 
 
@@ -328,23 +299,18 @@ const getLocations = async (req, res) => {
 
 const getProviders = async (req, res) => {
     try {
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
-            const query = 'CALL sp_obtener_proveedores(NULL, NULL, NULL)';
-            const result = await client.query(query);
-            const response = result.rows[0];
-            
-            if (response.o_status_code === 200) {
-                const cursorResult = await client.query(`FETCH ALL IN "${response.o_cursor}"`);
-                await client.query('COMMIT');
-                res.status(200).json({ success: true, data: cursorResult.rows });
-            } else {
-                await client.query('ROLLBACK');
-                res.status(response.o_status_code).json({ success: false, message: response.o_mensaje });
-            }
-        } finally { client.release(); }
-    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+        // Llamamos a la función como si fuera una tabla
+        const result = await pool.query('SELECT * FROM sp_listar_proveedores()');
+        
+        res.status(200).json({
+            success: true,
+            data: result.rows
+        });
+
+    } catch (error) {
+        console.error("Error al obtener proveedores desde SP:", error);
+        res.status(500).json({ success: false, message: 'Error interno del servidor' });
+    }
 };
 
 const createProvider = async (req, res) => {
@@ -613,6 +579,107 @@ const getMyTickets = async (req, res) => {
 };
 
 
+const updateProvider = async (req, res) => {
+    const { 
+        admin_id, 
+        prov_codigo, 
+        pro_nombre, 
+        prov_fecha_creacion, 
+        pro_tipo, 
+        fk_lugar, 
+        usu_nombre, 
+        usu_email 
+    } = req.body;
+
+    try {
+        // Llamada al SP sp_editar_proveedor
+        // Parámetros: 8 de entrada + 2 de salida (status, mensaje) = 10 params
+        const response = await pool.query(
+            `CALL sp_editar_proveedor($1, $2, $3, $4, $5, $6, $7, $8, NULL, NULL)`,
+            [
+                admin_id,           // $1
+                prov_codigo,        // $2
+                pro_nombre,         // $3
+                prov_fecha_creacion,// $4
+                pro_tipo,           // $5
+                fk_lugar,           // $6
+                usu_nombre,         // $7
+                usu_email           // $8
+            ]
+        );
+
+        // En pg, los parámetros INOUT se devuelven en la primera fila
+        const dbResult = response.rows[0];
+        
+        if (dbResult.o_status_code === 200) {
+            res.status(200).json({
+                success: true,
+                message: dbResult.o_mensaje
+            });
+        } else {
+            res.status(dbResult.o_status_code || 400).json({
+                success: false,
+                message: dbResult.o_mensaje
+            });
+        }
+
+    } catch (error) {
+        console.error("Error al actualizar proveedor:", error);
+        res.status(500).json({ success: false, message: 'Error interno: ' + error.message });
+    }
+};
+
+// 4. ELIMINAR PROVEEDOR (Nuevo)
+const deleteProvider = async (req, res) => {
+    // Axios DELETE suele enviar el body en la propiedad 'data', 
+    // pero Express lo recibe en req.body si está configurado correctamente.
+    const { admin_id, prov_codigo } = req.body;
+
+    try {
+        // Llamada al SP sp_eliminar_proveedor
+        // Parámetros: 2 de entrada + 2 de salida = 4 params
+        const response = await pool.query(
+            `CALL sp_eliminar_proveedor($1, $2, NULL, NULL)`,
+            [admin_id, prov_codigo]
+        );
+
+        const dbResult = response.rows[0];
+
+        if (dbResult.o_status_code === 200) {
+            res.status(200).json({
+                success: true,
+                message: dbResult.o_mensaje
+            });
+        } else {
+            res.status(dbResult.o_status_code || 400).json({
+                success: false,
+                message: dbResult.o_mensaje
+            });
+        }
+
+    } catch (error) {
+        console.error("Error al eliminar proveedor:", error);
+        res.status(500).json({ success: false, message: 'Error interno: ' + error.message });
+    }
+};
+
+
+const getUserMiles = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query('SELECT usu_total_millas FROM usuario WHERE usu_codigo = $1', [id]);
+        
+        if (result.rows.length > 0) {
+            res.json({ success: true, miles: result.rows[0].usu_total_millas });
+        } else {
+            res.status(404).json({ success: false, message: 'Usuario no encontrado' });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
 module.exports = {
     loginUser,
     registerClient,
@@ -639,5 +706,8 @@ module.exports = {
     createTravel,
     updateTravel,
     updateRoute,
-    getMyTickets
+    getMyTickets,
+    updateProvider,
+    deleteProvider,
+    getUserMiles
 };

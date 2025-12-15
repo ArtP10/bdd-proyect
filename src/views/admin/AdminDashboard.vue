@@ -15,7 +15,10 @@
           <li :class="{ active: activeMenu === 'Promociones' }">
             <a href="#" @click.prevent="activeMenu = 'Promociones'">Promociones</a>
           </li>
-          </ul>
+          <li :class="{ active: activeMenu === 'Roles' }">
+            <a href="#" @click.prevent="activeMenu = 'Roles'">Roles</a>
+          </li>
+        </ul>
       </nav>
     </aside>
 
@@ -32,6 +35,9 @@
       <div v-if="activeMenu === 'Promociones'">
         <Promotions />
       </div>
+      <div v-if="activeMenu === 'Roles'">
+        <Roles />
+      </div>
     </main>
   </div>
 </template>
@@ -41,6 +47,7 @@ import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import AdminGestionProveedor from './AdminGestionProveedor.vue';
 import Promotions from './Promotions.vue';
+import Roles from './Roles.vue';
 
 const router = useRouter();
 const activeMenu = ref('Proveedores'); // Por defecto para probar

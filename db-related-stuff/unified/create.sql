@@ -36,7 +36,9 @@ CREATE TABLE lugar (
     CONSTRAINT check_lug_tipo CHECK (lug_tipo IN ('Pais', 'Estado', 'Ciudad', 'Municipio', 'Parroquia'))
 );
 
--- 3. PROVEEDORES Y ESTABLECIMIENTOS
+
+
+
 CREATE TABLE proveedor(
     prov_codigo SERIAL PRIMARY KEY,
     prov_nombre VARCHAR(100) NOT NULL UNIQUE,
@@ -45,8 +47,8 @@ CREATE TABLE proveedor(
     fk_lugar INTEGER NOT NULL,
     fk_usu_codigo INTEGER NOT NULL UNIQUE,
     CONSTRAINT check_tipo_proveedor CHECK(prov_tipo IN('Aerolinea', 'Terrestre', 'Maritimo', 'Otros'))
-    CONSTRAINT check_fecha_real(prov_fecha_creacion < CURRENT_DATE)
 );
+
 
 CREATE TABLE hotel(
     hot_codigo SERIAL PRIMARY KEY,
@@ -71,11 +73,9 @@ CREATE TABLE telefono (
     tel_prefijo_pais VARCHAR(5) NOT NULL,
     tel_prefijo_operador VARCHAR(5) NOT NULL,
     tel_sufijo VARCHAR(15) NOT NULL,
-    fk_prov_codigo INTEGER,
+    fk_prov_codigo INTEGER, -- Corregido nombre
     fk_hotel INTEGER,
-    fk_restaurante INTEGER,
-
-    CONSTRAINT uk_telefono_unico UNIQUE (tel_prefijo_pais, tel_prefijo_operador, tel_sufijo)
+    fk_restaurante INTEGER
 );
 
 CREATE TABLE plato(
@@ -125,24 +125,9 @@ CREATE TABLE documento(
     CONSTRAINT check_doc_tipo CHECK(doc_tipo IN('Pasaporte', 'Visa', 'Cedula'))
 );
 
-CREATE TABLE documento (
-    doc_codigo SERIAL PRIMARY KEY,
-    doc_fecha_emision DATE NOT NULL,
-    doc_fecha_vencimiento DATE NOT NULL,
-    doc_numero_documento VARCHAR(20) NOT NULL,
-    doc_tipo VARCHAR(20) NOT NULL,
-    fk_nac_codigo INTEGER NOT NULL,
-    fk_via_codigo INTEGER NOT NULL,
-    CONSTRAINT check_doc_tipo CHECK (doc_tipo IN ('Pasaporte', 'Visa', 'Cedula')),
-    CONSTRAINT uk_documento_unico UNIQUE (doc_tipo, doc_numero_documento, fk_nac_codigo)
-);
-
-
-
-
 CREATE TABLE estado_civil(
     edo_civ_codigo SERIAL PRIMARY KEY,
-    edo_civ_nombre VARCHAR(20) NOT NULL Unique,
+    edo_civ_nombre VARCHAR(20) NOT NULL,
     edo_civ_descripcion VARCHAR(100)
 );
 
@@ -236,8 +221,7 @@ CREATE TABLE terminal(
     ter_codigo SERIAL PRIMARY KEY,
     ter_nombre VARCHAR(50) NOT NULL,
     fk_lugar INTEGER NOT NULL,
-    ter_tipo VARCHAR(50) NOT NULL,
-    CONSTRAINT uk_terminal_lugar_nombre UNIQUE (ter_nombre, fk_lugar)
+    ter_tipo VARCHAR(50) NOT NULL
 );
 
 CREATE TABLE medio_transporte(
@@ -541,8 +525,8 @@ CREATE TABLE reserva_de_habitacion(
     res_hab_fecha_hora_fin TIMESTAMP NOT NULL,
     res_hab_costo_unitario NUMERIC(10,2) NOT NULL,
     fk_habitacion INTEGER NOT NULL,
-    fk_detalle_reserva INTEGER NOT NULL,
-    fk_detalle_reserva_2 INTEGER NOT NULL,
+    fk_detalle_reserva INTEGER,
+    fk_detalle_reserva_2 INTEGER,
     fk_paquete_turistico INTEGER,
     PRIMARY KEY(res_hab_fecha_hora_inicio, fk_habitacion, res_hab_fecha_hora_fin)
 );

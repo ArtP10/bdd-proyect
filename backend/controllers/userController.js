@@ -1,51 +1,75 @@
 const pool = require('../config/db');
 
+// userController.js (o el nombre que tenga tu archivo)
+
 const loginUser = async (req, res) => {
-  const { p_search_name, p_search_pass, p_search_type } = req.body;
+    // 1. Ya no extraemos 'user_type' o 'role' del body
+    const { username, password } = req.body;
 
-  try {
+    try {
+        // 2. Actualizamos la llamada SQL
+        // IMPORTANTE:
+        // - Quitamos el 3er parámetro de entrada (el rol).
+        // - Aseguramos tener los placeholders (null) para los parámetros INOUT nuevos.
+        
+        // Estructura del nuevo SP (10 parámetros en total):
+        // 1. IN nombre
+        // 2. IN contraseña
+        // 3. INOUT codigo (null)
+        // 4. INOUT nombre (null)
+        // 5. INOUT rol (null)
+        // 6. INOUT status (null)
+        // 7. INOUT mensaje (null)
+        // 8. INOUT privilegios (null)
+        // 9. INOUT correo (null)
+        // 10. INOUT prov_tipo (null) <-- NUEVO
 
-    const query = `
-      CALL sp_login_usuario($1, $2, $3, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
-    `;
-    const values = [p_search_name, p_search_pass, p_search_type];
-    
-    const result = await pool.query(query, values);
-    
-    const dbResponse = result.rows[0];
+        const response = await pool.query(
+            `CALL sp_login_usuario($1, $2, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL)`,
+            [username, password]
+        );
 
- 
-    if (dbResponse.o_status_code === 200) {
-      
-      res.status(200).json({
-        success: true,
-        message: dbResponse.o_mensaje,
-        data: {
-          user_id: dbResponse.o_usu_codigo,
-          user_name: dbResponse.o_usu_nombre,
-          user_role: dbResponse.o_usu_rol,
-          user_correo: dbResponse.o_usu_correo,
-          privileges: dbResponse.o_rol_privilegios || [] // Array de privilegios
+        // Al usar 'CALL' con pg, los parámetros INOUT suelen devolverse en response.rows[0]
+        // NOTA: Dependiendo de tu configuración de pg, esto puede variar. 
+        // Si usas una versión reciente, devuelve un objeto con las columnas INOUT.
+        
+        const dbResult = response.rows[0];
+
+        // Mapeamos la respuesta según los nombres de salida del SP
+        const statusCode = dbResult.o_status_code;
+        const message = dbResult.o_mensaje;
+
+        if (statusCode === 200) {
+            return res.status(200).json({
+                success: true,
+                message: message,
+                user: {
+                    id: dbResult.o_usu_codigo,
+                    name: dbResult.o_usu_nombre,
+                    email: dbResult.o_usu_correo,
+                    role: dbResult.o_usu_rol,          // El rol real que vino de la BD
+                    privileges: dbResult.o_rol_privilegios,
+                    provider_type: dbResult.o_prov_tipo // <--- IMPORTANTE: Enviarlo al front
+                }
+            });
+        } else {
+            // Manejo de errores (401, 404, etc)
+            return res.status(statusCode || 400).json({
+                success: false,
+                message: message
+            });
         }
-      });
 
-    } else {
-      
-      res.status(dbResponse.o_status_code).json({
-        success: false,
-        message: dbResponse.o_mensaje
-      });
-
+    } catch (error) {
+        console.error('Error en login:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error interno del servidor'
+        });
     }
-
-  } catch (err) {
-    console.error('Login Error:', err);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Error interno del servidor' 
-    });
-  }
 };
+
+
 
 
 const registerClient = async (req, res) => {
@@ -452,6 +476,23 @@ const getCompatibleTerminals = async (req, res) => {
 };
 
 // 2. Obtener Rutas del Proveedor
+
+// 3. Crear Ruta
+const createRoute = async (req, res) => {
+    // Recibimos rut_descripcion
+    const { user_id, costo, millas, rut_tipo, rut_descripcion, fk_origen, fk_destino } = req.body;
+    try {
+        // Ajustamos la llamada al SP para incluir el nuevo parámetro (ahora son 9 argumentos contando los INOUT)
+        const query = `CALL sp_registrar_ruta($1, $2, $3, $4, $5, $6, $7, NULL, NULL)`;
+        const values = [user_id, costo, millas, rut_tipo, rut_descripcion, fk_origen, fk_destino];
+        
+        const result = await pool.query(query, values);
+        const resp = result.rows[0];
+        res.status(resp.o_status_code).json({ success: resp.o_status_code === 201, message: resp.o_mensaje });
+    } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
+};
+
+// READ
 const getRoutes = async (req, res) => {
     const { user_id } = req.body;
     try {
@@ -474,18 +515,19 @@ const getRoutes = async (req, res) => {
     } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
 };
 
-// 3. Crear Ruta
-const createRoute = async (req, res) => {
-    const { user_id, costo, millas, fk_origen, fk_destino } = req.body;
+const updateRoute = async (req, res) => {
+    // Recibir rut_descripcion
+    const { user_id, rut_codigo, costo, millas, rut_descripcion } = req.body;
     try {
-        const query = `CALL sp_registrar_ruta($1, $2, $3, $4, $5, NULL, NULL)`;
-        const result = await pool.query(query, [user_id, costo, millas, fk_origen, fk_destino]);
+        // Ajustar llamada al SP (ahora recibe descripción)
+        const query = `CALL sp_modificar_ruta($1, $2, $3, $4, $5, NULL, NULL)`;
+        const result = await pool.query(query, [user_id, rut_codigo, costo, millas, rut_descripcion]);
         const resp = result.rows[0];
-        res.status(resp.o_status_code).json({ success: resp.o_status_code === 201, message: resp.o_mensaje });
+        res.status(resp.o_status_code).json({ success: resp.o_status_code === 200, message: resp.o_mensaje });
     } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
-};
+};;
 
-// 4. Eliminar Ruta
+// DELETE (Nuevo)
 const deleteRoute = async (req, res) => {
     const { user_id, rut_codigo } = req.body;
     try {
@@ -545,6 +587,32 @@ const updateTravel = async (req, res) => {
     } catch (err) { console.error(err); res.status(500).json({ success: false, message: 'Error server' }); }
 };
 
+
+
+const getMyTickets = async (req, res) => {
+    const { user_id } = req.body;
+    
+    try {
+        const client = await pool.connect();
+        try {
+            // Llamamos a la función que devuelve la tabla de tickets
+            const query = 'SELECT * FROM sp_obtener_tickets_cliente($1)';
+            const result = await client.query(query, [user_id]);
+            
+            res.status(200).json({ 
+                success: true, 
+                data: result.rows 
+            });
+        } finally {
+            client.release();
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Error al obtener tickets' });
+    }
+};
+
+
 module.exports = {
     loginUser,
     registerClient,
@@ -569,5 +637,7 @@ module.exports = {
     getCompatibleTerminals,
     getTravels,
     createTravel,
-    updateTravel
+    updateTravel,
+    updateRoute,
+    getMyTickets
 };

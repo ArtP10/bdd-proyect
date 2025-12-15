@@ -20,6 +20,13 @@
           </li>
         </ul>
       </nav>
+      <div class="sidebar-footer">
+        <button class="btn-logout" @click="handleLogout">
+          <i class="fa-solid fa-right-from-bracket"></i> Cerrar Sesión
+        </button>
+      </div>
+
+
     </aside>
 
     <main class="main-content">
@@ -53,6 +60,12 @@ import AirlineTravels from './AirlineTravels.vue';
 const router = useRouter();
 const activeMenu = ref('Flota'); // Por defecto para probar
 
+const handleLogout = () => {
+    localStorage.removeItem('user_session');
+    localStorage.removeItem('userRole');
+    router.push('/');
+};
+
 onMounted(() => {
   const session = localStorage.getItem('user_session');
   if (!session) router.push('/login');
@@ -70,4 +83,6 @@ onMounted(() => {
 .sidebar-nav li.active a { background-color: #3b82f6; color: white; border-right: 4px solid #60a5fa; }
 .main-content { flex: 1; padding: 2rem; overflow-y: auto; }
 .page-title { font-size: 1.8rem; font-weight: 700; color: #1e293b; margin-bottom: 1.5rem; }
+.sidebar-footer { padding: 1.5rem; border-top: 1px solid #f0f0f0; }
+
 </style>

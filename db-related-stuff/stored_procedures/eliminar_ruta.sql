@@ -5,8 +5,11 @@ CREATE OR REPLACE PROCEDURE sp_eliminar_ruta(
     INOUT o_mensaje VARCHAR DEFAULT NULL
 )
 LANGUAGE plpgsql AS $$
+DECLARE
+    v_prov_id INTEGER;
+    v_rut_prov_id INTEGER;
 BEGIN
-    -- 1. Validar Permisos
+    -- Validar Permisos
     IF NOT EXISTS (
         SELECT 1 FROM usuario u JOIN rol_privilegio rp ON u.fk_rol_codigo = rp.fk_rol_codigo
         JOIN privilegio p ON rp.fk_pri_codigo = p.pri_codigo
@@ -15,33 +18,23 @@ BEGIN
         o_status_code := 403; o_mensaje := 'No tiene permisos para eliminar rutas.'; RETURN;
     END IF;
 
-    -- 2. Validar Traslados Activos o Futuros
-    IF EXISTS (
-        SELECT 1 FROM traslado 
-        WHERE fk_rut_codigo = i_rut_codigo 
-        AND tras_fecha_hora_fin >= CURRENT_TIMESTAMP
-    ) THEN
-        o_status_code := 409; -- Conflict
-        o_mensaje := 'No se puede eliminar: Hay vuelos activos o programados en esta ruta.';
-        RETURN;
+    -- Validar Propiedad
+    SELECT prov_codigo INTO v_prov_id FROM proveedor WHERE fk_usu_codigo = i_usu_codigo;
+    SELECT fk_prov_codigo INTO v_rut_prov_id FROM ruta WHERE rut_codigo = i_rut_codigo;
+
+    IF v_prov_id <> v_rut_prov_id OR v_rut_prov_id IS NULL THEN
+        o_status_code := 403; o_mensaje := 'No puede eliminar una ruta que no le pertenece.'; RETURN;
     END IF;
 
-    -- 3. Eliminar (Si hay historial antiguo se puede bloquear o hacer soft-delete, aqui haremos hard delete si no hay activos)
-    -- Nota: Si hay vuelos pasados, la FK de traslado fallará si no es ON DELETE CASCADE. 
-    -- Asumiremos que solo queremos borrar si NO hay historial para integridad. 
-    -- Si quieres permitir borrar rutas con historial viejo, habría que poner fk a null en traslados viejos.
-    
+    -- Validar Dependencias (Traslados)
     IF EXISTS (SELECT 1 FROM traslado WHERE fk_rut_codigo = i_rut_codigo) THEN
-         o_status_code := 409; 
-         o_mensaje := 'No se puede eliminar: Esta ruta tiene historial de vuelos. Contacte soporte.';
-         RETURN;
+        o_status_code := 409; o_mensaje := 'No se puede eliminar: Existen vuelos asociados a esta ruta.'; RETURN;
     END IF;
 
+    -- Eliminar
     DELETE FROM ruta WHERE rut_codigo = i_rut_codigo;
-    
-    o_status_code := 200;
-    o_mensaje := 'Ruta eliminada correctamente.';
 
+    o_status_code := 200; o_mensaje := 'Ruta eliminada correctamente.';
 EXCEPTION WHEN OTHERS THEN
     o_status_code := 500; o_mensaje := 'Error BD: ' || SQLERRM;
 END; $$;

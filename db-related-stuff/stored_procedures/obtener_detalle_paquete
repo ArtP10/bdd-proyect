@@ -1,0 +1,40 @@
+CREATE OR REPLACE FUNCTION sp_obtener_detalle_paquete(_id INT)
+RETURNS TABLE (detalle JSON) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT json_build_object(
+        'info', (SELECT row_to_json(p) FROM (SELECT paq_tur_nombre, paq_tur_monto_total FROM paquete_turistico WHERE paq_tur_codigo = _id) p),
+        'servicios', (
+            SELECT COALESCE(json_agg(row_to_json(s)), '[]')
+            FROM (
+                SELECT ser.ser_nombre, ser.ser_tipo, ser.ser_costo, ps.cantidad
+                FROM paq_ser ps
+                JOIN servicio ser ON ps.fk_ser_codigo = ser.ser_codigo
+                WHERE ps.fk_paq_tur_codigo = _id
+            ) s
+        ),
+        'traslados', (
+            SELECT COALESCE(json_agg(row_to_json(t)), '[]')
+            FROM (
+                SELECT mt.med_tra_tipo, ter_o.ter_nombre as origen, ter_d.ter_nombre as destino, r.rut_costo
+                FROM paq_tras pt
+                JOIN traslado tr ON pt.fk_tras_codigo = tr.tras_codigo
+                JOIN ruta r ON tr.fk_rut_codigo = r.rut_codigo
+                JOIN terminal ter_o ON r.fk_terminal_origen = ter_o.ter_codigo
+                JOIN terminal ter_d ON r.fk_terminal_destino = ter_d.ter_codigo
+                JOIN medio_transporte mt ON tr.fk_med_tra_codigo = mt.med_tra_codigo
+                WHERE pt.fk_paq_tur_codigo = _id
+            ) t
+        ),
+        'reglas', (
+            SELECT COALESCE(json_agg(row_to_json(r)), '[]')
+            FROM (
+                SELECT rp.reg_paq_atributo, rp.reg_paq_operador, rp.reg_paq_valor
+                FROM reg_paq_paq rpp
+                JOIN regla_paquete rp ON rpp.fk_reg_paq_codigo = rp.reg_paq_codigo
+                WHERE rpp.fk_paq_tur_codigo = _id
+            ) r
+        )
+    );
+END;
+$$ LANGUAGE plpgsql;

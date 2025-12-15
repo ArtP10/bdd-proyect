@@ -1,19 +1,20 @@
 const express = require('express');
 const router = express.Router();
-const promocionController = require('../controllers/promocionController');
+const controller = require('../controllers/promocionController');
 
-router.post('/', promocionController.crearPromocion);
-router.get('/', promocionController.obtenerPromociones);
-router.put('/:id', promocionController.actualizarPromocion);
-router.delete('/:id', promocionController.eliminarPromocion);
-router.get('/listas-asignacion', promocionController.obtenerListasAsignacion);
-router.post('/asignar', promocionController.asignarPromocion);
-router.get('/:prom_codigo', promocionController.getPromocionData);
+// CRUD
+router.get('/', controller.obtenerPromociones);
+router.post('/', controller.crearPromocion);
+router.put('/:id', controller.actualizarPromocion);
+router.delete('/:id', controller.eliminarPromocion);
 
-// 2. Ruta para realizar la búsqueda de elementos filtrados
-router.get('/:prom_codigo/elementos', promocionController.buscarElementos);
+// Builder y Detalles
+router.get('/builder/:prom_codigo', controller.getPromocionData);
+router.get('/builder/:prom_codigo/elementos', controller.buscarElementos);
+router.get('/builder/hotel/:hotelId/habitaciones', controller.buscarHabitacionesHotel); // NUEVA RUTA
+router.post('/builder/:prom_codigo/gestion', controller.gestionarAsignacion);
 
-// 3. Ruta para asignar o remover la promoción de un elemento
-router.post('/:prom_codigo/gestion', promocionController.gestionarAsignacion);
+// ESTA ES LA RUTA QUE TE DABA 404
+router.get('/:id/detalles', controller.getDetalleAsignaciones);
 
 module.exports = router;

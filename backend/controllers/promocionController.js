@@ -5,17 +5,18 @@ const pool = require('../config/db');
 // =====================================================================
 
 // Obtener todas las promociones
+// Obtener todas las promociones
 const obtenerPromociones = async (req, res) => {
     try {
-        // CAMBIO: Ahora llama a la función SQL en lugar de hacer SELECT a la tabla
-        const result = await pool.query('SELECT * FROM sp_obtener_promociones()');
+        // AQUÍ ESTÁ EL CAMBIO: Llamamos a 'fn_listar_promociones'
+        const result = await pool.query('SELECT * FROM fn_listar_promociones()');
+        
         res.status(200).json({ success: true, data: result.rows });
     } catch (error) {
         console.error(error);
         res.status(500).json({ success: false, message: error.message });
     }
 };
-
 // Registrar nueva promoción
 const crearPromocion = async (req, res) => {
     const { nombre, descripcion, fecha_vencimiento, descuento } = req.body;

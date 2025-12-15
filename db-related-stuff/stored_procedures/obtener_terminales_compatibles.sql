@@ -27,7 +27,7 @@ BEGIN
         (t.ter_nombre || ' - ' || l.lug_nombre || ', ' || p.lug_nombre) AS ter_nombre_completo,
         t.ter_tipo
     FROM terminal t
-    JOIN lugar l ON t.fk_lug_codigo = l.lug_codigo
+    JOIN lugar l ON t.fk_lugar = l.lug_codigo
     JOIN lugar p ON l.fk_lugar = p.lug_codigo
     WHERE 
         (v_pro_tipo = 'Aerolinea' AND t.ter_tipo = 'Aeropuerto') OR

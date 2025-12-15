@@ -1,4 +1,6 @@
--- 1. SEGURIDAD Y USUARIOS
+/* =========================================================
+   1. SEGURIDAD Y USUARIOS
+   ========================================================= */
 CREATE TABLE rol(
     rol_codigo SERIAL PRIMARY KEY,
     rol_nombre VARCHAR(30) NOT NULL UNIQUE,
@@ -27,7 +29,9 @@ CREATE TABLE usuario(
     fk_lugar INTEGER NOT NULL
 );
 
--- 2. UBICACIÓN
+/* =========================================================
+   2. UBICACIÓN
+   ========================================================= */
 CREATE TABLE lugar (
     lug_codigo SERIAL PRIMARY KEY,
     lug_tipo VARCHAR(50) NOT NULL,
@@ -36,19 +40,19 @@ CREATE TABLE lugar (
     CONSTRAINT check_lug_tipo CHECK (lug_tipo IN ('Pais', 'Estado', 'Ciudad', 'Municipio', 'Parroquia'))
 );
 
-
-
-
+/* =========================================================
+   3. PROVEEDORES Y ESTABLECIMIENTOS
+   ========================================================= */
 CREATE TABLE proveedor(
     prov_codigo SERIAL PRIMARY KEY,
     prov_nombre VARCHAR(100) NOT NULL UNIQUE,
-    prov_fecha_creacion DATE NOT NULL DEFAULT CURRENT_DATE, -- Corregido DEFAULT
+    prov_fecha_creacion DATE NOT NULL DEFAULT CURRENT_DATE,
     prov_tipo VARCHAR(50) NOT NULL,
     fk_lugar INTEGER NOT NULL,
     fk_usu_codigo INTEGER NOT NULL UNIQUE,
-    CONSTRAINT check_tipo_proveedor CHECK(prov_tipo IN('Aerolinea', 'Terrestre', 'Maritimo', 'Otros'))
+    CONSTRAINT check_tipo_proveedor CHECK(prov_tipo IN('Aerolinea', 'Terrestre', 'Maritimo', 'Otros')),
+    CONSTRAINT check_fecha_real CHECK (prov_fecha_creacion <= CURRENT_DATE)
 );
-
 
 CREATE TABLE hotel(
     hot_codigo SERIAL PRIMARY KEY,
@@ -73,9 +77,10 @@ CREATE TABLE telefono (
     tel_prefijo_pais VARCHAR(5) NOT NULL,
     tel_prefijo_operador VARCHAR(5) NOT NULL,
     tel_sufijo VARCHAR(15) NOT NULL,
-    fk_prov_codigo INTEGER, -- Corregido nombre
+    fk_prov_codigo INTEGER,
     fk_hotel INTEGER,
-    fk_restaurante INTEGER
+    fk_restaurante INTEGER,
+    CONSTRAINT uk_telefono_unico UNIQUE (tel_prefijo_pais, tel_prefijo_operador, tel_sufijo)
 );
 
 CREATE TABLE plato(
@@ -97,7 +102,9 @@ CREATE TABLE habitacion(
     fk_promocion INTEGER
 );
 
--- 4. VIAJEROS
+/* =========================================================
+   4. VIAJEROS
+   ========================================================= */
 CREATE TABLE nacionalidad(
     nac_codigo SERIAL PRIMARY KEY,
     nac_nombre VARCHAR(30) UNIQUE NOT NULL,
@@ -114,7 +121,7 @@ CREATE TABLE viajero(
     fk_usu_codigo INTEGER NOT NULL
 );
 
-CREATE TABLE documento(
+CREATE TABLE documento (
     doc_codigo SERIAL PRIMARY KEY,
     doc_fecha_emision DATE NOT NULL,
     doc_fecha_vencimiento DATE NOT NULL,
@@ -122,12 +129,13 @@ CREATE TABLE documento(
     doc_tipo VARCHAR(20) NOT NULL,
     fk_nac_codigo INTEGER NOT NULL,
     fk_via_codigo INTEGER NOT NULL,
-    CONSTRAINT check_doc_tipo CHECK(doc_tipo IN('Pasaporte', 'Visa', 'Cedula'))
+    CONSTRAINT check_doc_tipo CHECK (doc_tipo IN ('Pasaporte', 'Visa', 'Cedula')),
+    CONSTRAINT uk_documento_unico UNIQUE (doc_tipo, doc_numero_documento, fk_nac_codigo)
 );
 
 CREATE TABLE estado_civil(
     edo_civ_codigo SERIAL PRIMARY KEY,
-    edo_civ_nombre VARCHAR(20) NOT NULL,
+    edo_civ_nombre VARCHAR(20) NOT NULL UNIQUE,
     edo_civ_descripcion VARCHAR(100)
 );
 
@@ -140,7 +148,9 @@ CREATE TABLE via_edo(
     CONSTRAINT check_fechas_validas CHECK (via_edo_fecha_fin >= via_edo_fecha_inicio)
 );
 
--- 5. SERVICIOS Y PRODUCTOS
+/* =========================================================
+   5. SERVICIOS Y PRODUCTOS
+   ========================================================= */
 CREATE TABLE servicio(
     ser_codigo SERIAL PRIMARY KEY,
     ser_nombre VARCHAR(50) NOT NULL,
@@ -149,9 +159,10 @@ CREATE TABLE servicio(
     ser_fecha_hora_inicio TIMESTAMP NOT NULL,
     ser_fecha_hora_fin TIMESTAMP NOT NULL,
     ser_millas_otorgadas INTEGER DEFAULT 0,
-    ser_tipo VARCHAR(30) NOT NULL,
-    fk_prov_codigo INTEGER NOT NULL, -- Corregido nombre
-    CONSTRAINT check_fechas_servicio CHECK (ser_fecha_hora_fin >= ser_fecha_hora_inicio)
+    ser_tipo VARCHAR(30) NOT NULL DEFAULT 'Practico',
+    fk_prov_codigo INTEGER NOT NULL,
+    CONSTRAINT check_fechas_servicio CHECK (ser_fecha_hora_fin >= ser_fecha_hora_inicio),
+    CONSTRAINT check_ser_descripcion CHECK(ser_descripcion IN('Practico', 'Comfort', 'Corporativo', 'Familiar', 'Explorador'))
 );
 
 CREATE TABLE promocion(
@@ -168,6 +179,7 @@ CREATE TABLE paquete_turistico(
     paq_tur_monto_total NUMERIC(10,2) NOT NULL,
     paq_tur_monto_subtotal NUMERIC(10,2),
     paq_tur_costo_en_millas INTEGER NOT NULL,
+    paq_tur_descripcion VARCHAR(30),
     CONSTRAINT check_montos_positive CHECK (paq_tur_monto_total >= 0 AND paq_tur_monto_subtotal >= 0)
 );
 
@@ -216,12 +228,15 @@ CREATE TABLE reg_paq_paq(
     PRIMARY KEY(fk_reg_paq_codigo, fk_paq_tur_codigo)
 );
 
--- 6. TRANSPORTE
+/* =========================================================
+   6. TRANSPORTE
+   ========================================================= */
 CREATE TABLE terminal(
     ter_codigo SERIAL PRIMARY KEY,
     ter_nombre VARCHAR(50) NOT NULL,
     fk_lugar INTEGER NOT NULL,
-    ter_tipo VARCHAR(50) NOT NULL
+    ter_tipo VARCHAR(50) NOT NULL,
+    CONSTRAINT uk_terminal_lugar_nombre UNIQUE (ter_nombre, fk_lugar)
 );
 
 CREATE TABLE medio_transporte(
@@ -229,7 +244,7 @@ CREATE TABLE medio_transporte(
     med_tra_capacidad INTEGER NOT NULL,
     med_tra_descripcion VARCHAR(100) NOT NULL,
     med_tra_tipo VARCHAR(50) NOT NULL,
-    fk_prov_codigo INTEGER NOT NULL -- Corregido nombre
+    fk_prov_codigo INTEGER NOT NULL
 );
 
 CREATE TABLE puesto(
@@ -245,10 +260,12 @@ CREATE TABLE ruta(
     rut_costo NUMERIC(10,2) NOT NULL,
     rut_millas_otorgadas INTEGER NOT NULL,
     rut_tipo VARCHAR(50) NOT NULL,
+    rut_descripcion VARCHAR(30) NOT NULL DEFAULT 'Practico',
     fk_terminal_origen INTEGER NOT NULL,
     fk_terminal_destino INTEGER NOT NULL,
-    fk_prov_codigo INTEGER NOT NULL, -- Corregido nombre
-    CONSTRAINT check_rut_tipo CHECK(rut_tipo IN('Aerea', 'Terrestre', 'Maritima'))
+    fk_prov_codigo INTEGER NOT NULL,
+    CONSTRAINT check_rut_tipo CHECK(rut_tipo IN('Aerea', 'Terrestre', 'Maritima')),
+    CONSTRAINT check_rut_descripcion CHECK(rut_descripcion IN('Practico', 'Comfort', 'Corporativo', 'Familiar', 'Explorador'))
 );
 
 CREATE TABLE traslado(
@@ -261,7 +278,9 @@ CREATE TABLE traslado(
     CONSTRAINT check_fechas_traslado CHECK (tras_fecha_hora_fin >= tras_fecha_hora_inicio)
 );
 
--- 7. RESERVAS Y PAGOS
+/* =========================================================
+   7. RESERVAS Y PAGOS
+   ========================================================= */
 CREATE TABLE detalle_reserva(
     det_res_codigo INTEGER NOT NULL,
     det_res_fecha_creacion DATE NOT NULL,
@@ -269,7 +288,7 @@ CREATE TABLE detalle_reserva(
     det_res_monto_total NUMERIC(10,2) NOT NULL,
     det_res_sub_total NUMERIC(10,2) NOT NULL,
     fk_viajero_codigo INTEGER NOT NULL,
-    fk_viajero_numero INTEGER NOT NULL, -- ? Validar uso
+    fk_viajero_numero INTEGER NOT NULL,
     fk_compra INTEGER NOT NULL,
     fk_servicio INTEGER,
     fk_paquete_turistico INTEGER,
@@ -282,7 +301,7 @@ CREATE TABLE detalle_reserva(
 );
 
 CREATE TABLE pue_tras(
-    pue_tras_codigo SERIAL PRIMARY KEY, -- Simplificado PK
+    pue_tras_codigo SERIAL PRIMARY KEY,
     fk_tras_codigo INTEGER NOT NULL,
     fk_pue_codigo INTEGER NOT NULL,
     fk_med_tra_codigo INTEGER NOT NULL,
@@ -329,7 +348,7 @@ CREATE TABLE reembolso(
     fk_pago INTEGER NOT NULL
 );
 
--- Tablas de detalle de pago (Herencia lógica)
+-- Tablas de detalle de pago
 CREATE TABLE tarjeta_credito(
     met_pago_codigo SERIAL PRIMARY KEY,
     tar_cre_numero VARCHAR(20) NOT NULL,
@@ -405,7 +424,9 @@ CREATE TABLE milla_pago(
     mil_cantidad_utilizada INTEGER
 );
 
--- 8. GESTIÓN Y VARIOS
+/* =========================================================
+   8. GESTIÓN Y VARIOS
+   ========================================================= */
 CREATE TABLE resena(
     res_codigo SERIAL PRIMARY KEY,
     res_calificacion_numerica INTEGER NOT NULL,
@@ -536,8 +557,8 @@ CREATE TABLE reserva_restaurante(
     res_rest_num_mesa INTEGER NOT NULL,
     res_rest_tamano_mesa INTEGER NOT NULL,
     fk_restaurante INTEGER NOT NULL,
-    fk_detalle_reserva INTEGER NOT NULL,
-    fk_detalle_reserva_2 INTEGER NOT NULL,
+    fk_detalle_reserva INTEGER,
+    fk_detalle_reserva_2 INTEGER,
     fk_paquete_turistico INTEGER,
     PRIMARY KEY(res_rest_fecha_hora, fk_restaurante, res_rest_num_mesa)
 );

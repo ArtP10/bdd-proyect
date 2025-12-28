@@ -210,18 +210,27 @@ const openCreateModal = () => {
 const openEditModal = (provider) => {
     isEditing.value = true;
     currentEditId.value = provider.prov_codigo;
-    fetchLocations(); // Asegurar que tenemos los lugares
     
-    // Mapear datos de la fila al formulario
-    // Nota: provider.prov_fecha_creacion puede venir en formato ISO completo, lo cortamos para el input date
+    // Asegurarnos de tener los lugares cargados
+    if (locations.value.length === 0) {
+        fetchLocations(); 
+    }
+    
+    // Mapeo de datos: De la fila (provider) al Formulario (form)
     Object.assign(form, {
         pro_nombre: provider.prov_nombre,
+        // Convertir formato ISO a YYYY-MM-DD para el input date
         prov_fecha_creacion: provider.prov_fecha_creacion ? provider.prov_fecha_creacion.split('T')[0] : '',
         pro_tipo: provider.prov_tipo,
-        fk_lugar: provider.fk_lugar, // Asegúrate que tu API list devuelva fk_lugar
-        usu_nombre: provider.usu_nombre_usuario,
+        fk_lugar: provider.fk_lugar,
+        
+        // --- AQUÍ ESTÁ LA CORRECCIÓN ---
+        // Asignamos los datos del usuario que vienen del JOIN en el backend
+        usu_nombre: provider.usu_nombre_usuario, 
         usu_email: provider.usu_email,
-        usu_pass: '' // No llenamos password al editar
+        
+        // La contraseña se deja vacía al editar para indicar "no cambiar"
+        usu_pass: '' 
     });
     
     showModal.value = true;

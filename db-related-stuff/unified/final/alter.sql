@@ -96,11 +96,8 @@ ALTER TABLE detalle_reserva ADD CONSTRAINT fk_det_res_viajero FOREIGN KEY (fk_vi
 ALTER TABLE detalle_reserva ADD CONSTRAINT fk_det_res_compra FOREIGN KEY (fk_compra) REFERENCES compra(com_codigo);
 ALTER TABLE detalle_reserva ADD CONSTRAINT fk_det_res_servicio FOREIGN KEY (fk_servicio) REFERENCES servicio(ser_codigo);
 ALTER TABLE detalle_reserva ADD CONSTRAINT fk_det_res_paquete FOREIGN KEY (fk_paquete_turistico) REFERENCES paquete_turistico(paq_tur_codigo);
+ALTER TABLE detalle_reserva ADD CONSTRAINT fk_det_res_traslado FOREIGN KEY (fk_traslado) REFERENCES traslado(tras_codigo);
 
-ALTER TABLE pue_tras ADD CONSTRAINT fk_pt_traslado FOREIGN KEY (fk_tras_codigo) REFERENCES traslado(tras_codigo);
-ALTER TABLE pue_tras ADD CONSTRAINT fk_pt_puesto FOREIGN KEY (fk_med_tra_codigo, fk_pue_codigo) REFERENCES puesto(fk_med_tra_codigo, pue_codigo);
-ALTER TABLE pue_tras ADD CONSTRAINT fk_pt_paquete FOREIGN KEY (fk_paq_tur_codigo) REFERENCES paquete_turistico(paq_tur_codigo);
-ALTER TABLE pue_tras ADD CONSTRAINT un_asiento_por_vuelo UNIQUE (fk_tras_codigo, fk_pue_codigo, fk_med_tra_codigo);
 
 ALTER TABLE reserva_de_habitacion ADD CONSTRAINT fk_res_hab_habitacion FOREIGN KEY (fk_habitacion) REFERENCES habitacion(hab_num_hab);
 ALTER TABLE reserva_restaurante ADD CONSTRAINT fk_res_rest_restaurante FOREIGN KEY (fk_restaurante) REFERENCES restaurante(res_codigo);
@@ -158,6 +155,8 @@ ALTER TABLE compensacion ADD CONSTRAINT fk_compensacion_compra FOREIGN KEY (fk_c
 ALTER TABLE pago ADD CONSTRAINT fk_pago_compra FOREIGN KEY (fk_compra) REFERENCES compra(com_codigo);
 ALTER TABLE pago ADD CONSTRAINT fk_pago_tasa FOREIGN KEY (fk_tasa_de_cambio) REFERENCES tasa_de_cambio(tas_cam_codigo);
 ALTER TABLE pago ADD CONSTRAINT fk_pago_metodo FOREIGN KEY (fk_metodo_pago) REFERENCES metodo_pago(met_pag_codigo);
+
+ALTER TABLE metodo_pago ADD CONSTRAINT fk_tipo_metodo FOREIGN KEY (fk_tipo_metodo) REFERENCES tipo_metodo_pago(tip_met_codigo);
 
 ALTER TABLE reembolso ADD CONSTRAINT fk_reembolso_pago FOREIGN KEY (fk_pago) REFERENCES pago(pag_codigo);
 

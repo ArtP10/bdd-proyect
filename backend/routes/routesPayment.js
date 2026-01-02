@@ -8,7 +8,10 @@ router.post('/quotas', paymentController.getPendingQuotas);
 router.post('/history', paymentController.getPaymentHistory);
 
 // Rutas de Transacción (Escritura)
-router.post('/pay', paymentController.payQuota);
+router.post('/pay-quota', paymentController.payQuota);
 router.post('/refund', paymentController.requestRefund);
+router.post('/preview-refund', paymentController.previewRefund);
+router.post('/refunds-list', paymentController.getRefundsList);
 
+router.post('/items', paymentController.getPurchaseItems)
 module.exports = router;

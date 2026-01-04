@@ -69,6 +69,10 @@
             <option value="servicio">Servicios / Actividades</option>
             <option value="traslado">Traslados / Vuelos</option>
             <option value="paquete">Paquetes Turísticos</option>
+            <!-- OPCION DE WISHLIST PARA EL ITINERARIO -->
+             <!--MELANIE -->
+            <option value="wishlist">⭐ Mi Lista de Deseos</option>
+            <!--------------------------->
           </select>
           
           <select v-model="selectedProduct" class="form-control product-select">
@@ -274,40 +278,56 @@ const toggleTraveler = (id) => {
 };
 
 // --- PASO 2: CARGA DINÁMICA DE PRODUCTOS ---
+//--- CAMBIO DEL SELECT PARA QUE APAREZCA WISHLIST ---
+//--- MELA ---// 
 watch(selectedProductType, async (val) => {
-    selectedProduct.value = null; // Resetear selección
+    selectedProduct.value = null; 
     availableProducts.value = [];
     
     let url = '';
+    let options = { method: 'GET' };
+
+    // Determinamos la URL y el método
     if(val === 'servicio') url = 'http://localhost:3000/api/opciones/servicios'; 
-    // Nota: Para traslados, podrías reutilizar sp_listar_traslados_disponibles
     else if(val === 'traslado') url = 'http://localhost:3000/api/traslados-disponibles'; 
     else if(val === 'paquete') url = 'http://localhost:3000/api/paquetes';
+    else if(val === 'wishlist') url = 'http://localhost:3000/api/cart/wishlist-items'; // La ruta que definimos en cartRoutes.js
+        
 
     try {
-        const res = await fetch(url);
+        const res = await fetch(url, options);
         const data = await res.json();
         if(data.success) {
-            // Normalizamos la data para que el select funcione (algunos traen nombre, otros descripcion, otros titulo)
             availableProducts.value = data.data.map(item => ({
                 ...item,
-                nombre: item.nombre || item.descripcion || item.paq_tur_nombre, // Fallback de nombres
-                precio: item.costo || item.precio || item.paq_tur_monto_total // Fallback de precios
+                // Normalizamos los campos:
+                // Si viene de wishlist usa item.id_original, si no usa los códigos estándar
+                id: item.id_original || item.id || item.ser_codigo || item.tras_codigo || item.paq_tur_codigo,
+                nombre: item.nombre || item.descripcion || item.paq_tur_nombre,
+                precio: item.precio || item.costo || item.paq_tur_monto_total,
+                // El tipo es fundamental para el icono y el checkout
+                tipo: item.tipo || val 
             }));
         }
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error("Error cargando productos:", e); }
 });
-
+//--------------------------------------------------------------
+//Asegurar que el icono se asigne correctamente según el tipo real del producto (especialmente si viene de la wishlist)
 const addItemToCart = () => {
     if(!selectedProduct.value) return;
     
+    // Obtenemos el tipo real del objeto (porque en wishlist puede ser mixto)
+    const tipoReal = selectedProduct.value.tipo;
+
     cartItems.value.push({
         ...selectedProduct.value,
-        tipo: selectedProductType.value,
-        es_paquete: selectedProductType.value === 'paquete'
+        tipo: tipoReal,
+        es_paquete: tipoReal === 'paquete'
     });
+    
     selectedProduct.value = null;
 };
+//----------
 
 const getIcon = (tipo) => {
     if(tipo === 'servicio') return 'fa-solid fa-ticket';

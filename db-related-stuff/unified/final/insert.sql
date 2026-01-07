@@ -157,16 +157,20 @@ INSERT INTO milla_pago (met_pag_codigo, mil_cantidad_utilizada) VALUES
 -- 11. TASA_DE_CAMBIO (5 tasas para 3 monedas)
 -- Monedas: USD, EUR, COP
 INSERT INTO tasa_de_cambio (tas_cam_tasa_valor, tas_cam_fecha_hora_inicio, tas_cam_moneda) VALUES
-(270.00, '2025-11-01 08:00:00', 'USD'),
-(274.00, '2025-11-05 10:30:00', 'USD'),
-(317.00, '2025-11-10 12:00:00', 'EUR'),
-(323.00, '2025-11-15 14:00:00', 'EUR'),
-(0.07, '2025-11-01 09:00:00', 'COP'),
-(0.078, '2025-11-12 11:00:00', 'COP'),
-(280.00, '2025-12-01 15:00:00', 'USD'),
-(330.00, '2025-12-05 16:00:00', 'EUR'),
-(0.080, '2025-12-01 17:00:00', 'COP'),
-(0.090, '2025-12-03 17:00:00', 'COP');
+(1.00, '2025-11-01 08:00:00', 'USD'),
+(274.00, '2025-11-05 10:30:00', 'BS'),
+(0.85, '2025-11-15 14:00:00', 'EUR'),
+(156.20, '2025-11-01 09:00:00', 'YEN'),
+(0.74, '2025-11-12 11:00:00', 'GBP'),
+
+-- Tasas viejas lol
+INSERT INTO tasa_de_cambio (tas_cam_tasa_valor, tas_cam_fecha_hora_inicio, tas_cam_moneda, tas_cam_fecha_hora_fin) VALUES
+(1.00, '2025-11-01 08:00:00', 'USD', '2025-11-01 08:00:01'),
+(274.00, '2025-11-05 10:30:00', 'BS', '2025-11-05 10:30:01'),
+(0.85, '2025-11-15 14:00:00', 'EUR', '2025-11-15 14:00:01'),
+(156.20, '2025-11-01 09:00:00', 'YEN', '2025-11-01 09:00:01'),
+(0.74, '2025-11-12 11:00:00', 'GBP', '2025-11-12 11:00:01'),
+
 
 -- Actualizar fechas fin (simulación de historización)
 UPDATE tasa_de_cambio SET tas_cam_fecha_hora_fin = '2025-11-04 23:59:59' WHERE tas_cam_codigo = 1;

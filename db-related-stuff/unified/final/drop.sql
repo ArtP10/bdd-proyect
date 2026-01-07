@@ -74,3 +74,7 @@ DROP TABLE IF EXISTS usuario CASCADE;
 DROP TABLE IF EXISTS rol_privilegio CASCADE;
 DROP TABLE IF EXISTS privilegio CASCADE;
 DROP TABLE IF EXISTS rol CASCADE;
+
+
+--Agregada para la tabla nueva con el tema de los pagos, no funcionaba bien el sp y por eso las millas no se registraban
+DROP TABLE IF EXISTS tipo_metodo_pago CASCADE;

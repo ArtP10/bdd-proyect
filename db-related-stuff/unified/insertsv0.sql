@@ -703,11 +703,11 @@ INSERT INTO reg_paq_paq (fk_reg_paq_codigo, fk_paq_tur_codigo) VALUES
 -- 27. TASAS DE CAMBIO (5 tasas para 3 monedas)
 -- =====================================================
 INSERT INTO tasa_de_cambio (tas_cam_tasa_valor, tas_cam_fecha_hora_inicio, tas_cam_fecha_hora_fin, tas_cam_moneda) VALUES
-(36.50, '2025-01-01 00:00:00', '2025-03-31 23:59:59', 'USD'),
-(39.20, '2025-04-01 00:00:00', '2025-06-30 23:59:59', 'USD'),
-(42.80, '2025-07-01 00:00:00', NULL, 'USD'),
-(40.50, '2025-01-01 00:00:00', '2025-06-30 23:59:59', 'EUR'),
-(43.75, '2025-07-01 00:00:00', NULL, 'EUR');
+(295.35, '2025-12-01 00:00:00', NULL, 'BS'),
+(1.00, '2025-04-01 00:00:00', NULL, 'USD'),
+(0.74, '2025-07-01 00:00:00', NULL, 'GBP'),
+(0.85, '2025-01-01 00:00:00', NULL, 'EUR'),
+(156.18, '2025-07-01 00:00:00', NULL, 'YEN');
 
 -- =====================================================
 -- 28. MILLAS (5 tasas de valor de millas)
@@ -727,7 +727,194 @@ INSERT INTO categoria (cat_nombre, cat_descripcion) VALUES
 -- =====================================================
 -- 29. MÉTODOS DE PAGO (10 registros)
 -- ==========================================
-INSERT INTO metodo_pago (met_pag_descripcion) VALUES
+INSERT INTO tipo_metodo_pago (tip_met_nombre) VALUES
+('Tarjeta de Crédito'),       -- ID 1
+('Tarjeta de Débito'),        -- ID 2
+('Pago Móvil'),               -- ID 3
+('Transferencia Bancaria'),   -- ID 4
+('Efectivo'),                 -- ID 5
+('Zelle'),                    -- ID 6
+('Cheque'),                   -- ID 7
+('Depósito Bancario'),        -- ID 8
+('Criptomoneda'),             -- ID 9
+('Millas');
+
+
+-- =================
+-- Compras Nuevas
+--===============
+-- =====================================================
+-- 30. COMPRAS Y SERVICIOS COMBINADOS (CORREGIDO)
+-- =====================================================
+
+-- Compra 1: Cliente 97 - Vuelo + Hotel (CORRECTO)
+-- =====================================================
+-- 30. COMPRAS Y SERVICIOS COMBINADOS (CORREGIDO)
+-- =====================================================
+
+-- Compra 1: Cliente 97 - Vuelo + Hotel
+INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento) VALUES (530.00, 500.00, '2025-06-01', 97, NULL);
+-- Detalle 1 (Traslado) y 2 (Hotel)
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (1, '2025-06-01', '10:00:00', 250.00, 250.00, 1, 1, 1, NULL, 1, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (2, '2025-06-01', '10:05:00', 280.00, 250.00, 1, 1, 1, NULL, NULL, 'Confirmada');
+-- Reserva Habitación apunta a Compra 1, Detalle 2
+INSERT INTO reserva_de_habitacion (res_hab_fecha_hora_inicio, res_hab_fecha_hora_fin, res_hab_costo_unitario, fk_habitacion, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
+VALUES ('2025-06-15 14:00:00', '2025-06-18 12:00:00', 80.00, 1, 1, 2, NULL); 
+
+-- Compra 2: Cliente 98 - Tour + Restaurante
+INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento) VALUES (465.00, 430.00, '2025-07-10', 98, NULL);
+-- Detalle 3 (Tour) y 4 (Restaurante) - IDs GLOBALES
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (3, '2025-07-10', '11:00:00', 350.00, 350.00, 3, 1, 2, 1, NULL, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (4, '2025-07-10', '11:10:00', 115.00, 80.00, 3, 1, 2, NULL, NULL, 'Confirmada');
+-- Reserva Restaurante apunta a Compra 2, Detalle 4
+INSERT INTO reserva_restaurante (res_rest_fecha_hora, res_rest_num_mesa, res_rest_tamano_mesa, fk_restaurante, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
+VALUES ('2025-07-15 19:00:00', 5, 4, 1, 2, 4, NULL);
+
+-- Compra 3: Cliente 99 - Paquete
+INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento) VALUES (1200.00, 1100.00, '2025-08-05', 99, NULL);
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_paquete_turistico, fk_traslado, det_res_estado) VALUES (5, '2025-08-05', '09:00:00', 1200.00, 1100.00, 5, 1, 3, 1, NULL, 'Confirmada');
+
+-- Compra 4: Cliente 100 - Vuelo + Servicio
+INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento) VALUES (400.00, 380.00, '2025-09-12', 100, NULL);
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (6, '2025-09-12', '15:00:00', 220.00, 220.00, 7, 1, 4, 7, NULL, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (7, '2025-09-12', '15:05:00', 180.00, 160.00, 7, 1, 4, NULL, 5, 'Confirmada');
+
+-- Compra 5: Cliente 101 - Hotel + Tour
+INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento) VALUES (530.00, 500.00, '2025-10-20', 101, NULL);
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (8, '2025-10-20', '12:00:00', 350.00, 350.00, 9, 1, 5, 4, NULL, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (9, '2025-10-20', '12:10:00', 180.00, 150.00, 9, 1, 5, NULL, NULL, 'Confirmada');
+-- Reserva Habitación apunta a Compra 5, Detalle 9
+INSERT INTO reserva_de_habitacion (res_hab_fecha_hora_inicio, res_hab_fecha_hora_fin, res_hab_costo_unitario, fk_habitacion, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
+VALUES ('2025-10-25 14:00:00', '2025-10-27 12:00:00', 80.00, 2, 5, 9, NULL);
+
+-- Compra 6: Cliente 102 - Traslado + Servicio
+INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento) VALUES (210.00, 200.00, '2025-11-05', 102, NULL);
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (10, '2025-11-05', '08:00:00', 30.00, 30.00, 11, 1, 6, NULL, 3, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (11, '2025-11-05', '08:10:00', 180.00, 170.00, 11, 1, 6, 2, NULL, 'Confirmada');
+
+-- Compra 7: Cliente 103 - Paquete turístico
+INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento) VALUES (950.00, 900.00, '2025-11-20', 103, NULL);
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_paquete_turistico, fk_traslado, det_res_estado) VALUES (12, '2025-11-20', '10:00:00', 950.00, 900.00, 13, 1, 7, 2, NULL, 'Confirmada');
+
+-- Compra 8: Cliente 104 - Vuelo + Hotel + Tour
+INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento) VALUES (810.00, 780.00, '2025-12-01', 104, NULL);
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (13, '2025-12-01', '09:00:00', 180.00, 180.00, 15, 1, 8, NULL, 2, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (14, '2025-12-01', '09:10:00', 450.00, 420.00, 15, 1, 8, NULL, NULL, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (15, '2025-12-01', '09:20:00', 180.00, 180.00, 15, 1, 8, 2, NULL, 'Confirmada');
+-- Reserva Habitación apunta a Compra 8, Detalle 14
+INSERT INTO reserva_de_habitacion (res_hab_fecha_hora_inicio, res_hab_fecha_hora_fin, res_hab_costo_unitario, fk_habitacion, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
+VALUES ('2025-12-10 14:00:00', '2025-12-15 12:00:00', 80.00, 3, 8, 14, NULL);
+
+-- Compra 9: Cliente 105 - Tour + Restaurante
+INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento) VALUES (445.00, 430.00, '2025-12-15', 105, NULL);
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (16, '2025-12-15', '11:00:00', 350.00, 350.00, 17, 1, 9, 1, NULL, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (17, '2025-12-15', '11:10:00', 95.00, 80.00, 17, 1, 9, 6, NULL, 'Confirmada');
+-- Reserva Restaurante apunta a Compra 9, Detalle 17
+INSERT INTO reserva_restaurante (res_rest_fecha_hora, res_rest_num_mesa, res_rest_tamano_mesa, fk_restaurante, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
+VALUES ('2025-12-20 20:00:00', 8, 4, 2, 9, 17, NULL);
+
+-- Compra 10: Cliente 106 - Hotel + Tour
+INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento) VALUES (500.00, 480.00, '2026-01-10', 106, NULL);
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (18, '2026-01-10', '10:00:00', 320.00, 300.00, 19, 1, 10, NULL, NULL, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado) VALUES (19, '2026-01-10', '10:10:00', 180.00, 180.00, 19, 1, 10, 2, NULL, 'Confirmada');
+-- Reserva Habitación apunta a Compra 10, Detalle 18
+INSERT INTO reserva_de_habitacion (res_hab_fecha_hora_inicio, res_hab_fecha_hora_fin, res_hab_costo_unitario, fk_habitacion, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
+VALUES ('2026-01-20 14:00:00', '2026-01-24 12:00:00', 80.00, 4, 10, 18, NULL);
+
+-- Nota: Reemplaza también las secciones 38 (RESEÑAS) y 39 (RECLAMOS) 
+-- usando esta lógica: fk_detalle_reserva = ID_COMPRA, fk_detalle_reserva_2 = ID_DETALLE
+
+--====================================
+--Pagos y metodos de pagos d elas compras
+--=================================
+-- PAGO 1: Compra 1 (Tarjeta de Crédito)
+-- 1. Crear Header Metodo (ID esperado: 1)
+INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo) VALUES ('Pago Compra 1 - Juan Pérez', 1);
+-- 2. Crear Detalle TC (Usa ID 1)
+INSERT INTO tarjeta_credito (met_pago_codigo, tar_cre_numero, tar_cre_cvv, tar_cre_fecha_vencimiento, tar_cre_banco_emisor, tar_cre_nombre_titular) 
+VALUES (1, '4111111111111111', '123', '2027-12-31', 'Banco de Venezuela', 'Juan Pérez');
+-- 3. Crear Pago (Usa ID 1)
+INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago) 
+VALUES (530.00, '2025-06-01 10:30:00', 'USD', 1, 1, 1);
+
+-- PAGO 2: Compra 2 (Tarjeta de Débito)
+INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo) VALUES ('Pago Compra 2 - María Rodríguez', 2); -- ID 2
+INSERT INTO tarjeta_debito (met_pago_codigo, tar_deb_numero, tar_deb_cvv, tar_deb_fecha_vencimiento, tar_deb_banco_emisor, tar_deb_nombre_titular) 
+VALUES (2, '5500000000000004', '456', '2026-08-31', 'Banesco', 'María Rodríguez');
+INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago) 
+VALUES (465.00, '2025-07-10 11:30:00', 'USD', 2, 2, 2);
+
+-- PAGO 3: Compra 3 (Pago Móvil)
+INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo) VALUES ('Pago Compra 3 - Ref Móvil', 3); -- ID 3
+INSERT INTO pago_movil_interbancario (met_pago_codigo, pag_movil_int_numero_referencia, pag_movil_int_fecha_hora) 
+VALUES (3, '123456789012345', '2025-06-01 10:30:00');
+INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago) 
+VALUES (1200.00, '2025-08-05 09:30:00', 'USD', 3, 3, 3);
+
+-- PAGO 4: Compra 4 (Transferencia Bancaria)
+INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo) VALUES ('Pago Compra 4 - Transf', 4); -- ID 4
+INSERT INTO transferencia_bancaria (met_pago_codigo, trans_ban_numero_referencia, trans_ban_fecha_hora, tras_ban_numero_cuenta_emisora) 
+VALUES (4, 987654321, '2025-06-02 14:20:00', '01020123456789012345');
+INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago) 
+VALUES (400.00, '2025-09-12 15:30:00', 'EUR', 4, 4, 4);
+
+-- PAGO 5: Compra 5 (Efectivo)
+INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo) VALUES ('Pago Compra 5 - Taquilla', 5); -- ID 5
+INSERT INTO efectivo (met_pago_codigo, efe_moneda, efe_codigo) 
+VALUES (5, 'USD', 'CASH001');
+INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago) 
+VALUES (530.00, '2025-10-20 12:30:00', 'USD', 5, 3, 5);
+
+-- PAGO 6: Compra 6 (Zelle)
+INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo) VALUES ('Pago Compra 6 - Zelle Juan', 6); -- ID 6
+INSERT INTO zelle (met_pago_codigo, zel_titular_cuenta, zel_correo_electronico, zel_codigo_transaccion) 
+VALUES (6, 'Juan Pérez', 'juan@email.com', 'ZEL123456789');
+INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago) 
+VALUES (210.00, '2025-11-05 08:30:00', 'USD', 6, 3, 6);
+
+-- PAGO 7: Compra 7 (Cheque)
+INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo) VALUES ('Pago Compra 7 - Cheque Gerencia', 7); -- ID 7
+INSERT INTO cheque (met_pago_codigo, che_codigo_cuenta_cliente, che_numero, che_nombre_titular, che_banco_emisor, cheque_fecha_emision) 
+VALUES (7, '0102012345678', '00012345', 'Pedro García', 'Banco Mercantil', '2025-06-03');
+INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago) 
+VALUES (950.00, '2025-11-20 10:30:00', 'EUR', 7, 5, 7);
+
+-- PAGO 8: Compra 8 (Depósito Bancario)
+INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo) VALUES ('Pago Compra 8 - Deposito Prov', 8); -- ID 8
+INSERT INTO deposito_bancario (met_pago_codigo, dep_ban_numero_cuenta, dep_ban_banco_emisor, dep_ban_numero_referencia, dep_fecha_transaccion) 
+VALUES (8, '01020987654321', 'Provincial', 'DEP456789', '2025-06-04');
+INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago) 
+VALUES (810.00, '2025-12-01 09:30:00', 'USD', 8, 3, 8);
+
+-- PAGO 9: Compra 9 (Criptomoneda)
+INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo) VALUES ('Pago Compra 9 - BTC', 9); -- ID 9
+INSERT INTO criptomoneda (met_pago_codigo, cri_hash_transaccion, cri_direccion_billetera_emisora) 
+VALUES (9, 'abc123def456', '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa');
+INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago) 
+VALUES (445.00, '2025-12-15 11:30:00', 'USD', 9, 3, 9);
+
+-- PAGO 10: Compra 10 (Millas)
+INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo) VALUES ('Pago Compra 10 - Canje Millas', 10); -- ID 10
+INSERT INTO milla_pago (met_pag_codigo, mil_codigo, mil_cantidad_utilizada) 
+VALUES (10, NULL, 5000);
+INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago) 
+VALUES (500.00, '2026-01-10 10:30:00', 'USD', 10, 3, 10);
+
+-- Inserts de Millas Generadas (como script de antess)
+INSERT INTO milla (mil_valor_obtenido, mil_fecha_inicio, mil_fecha_fin, mil_valor_restado, fk_compra, fk_pago) VALUES
+(500, '2025-06-01', '2026-06-01', 0, 1, NULL),
+(200, '2025-07-10', '2026-07-10', 0, 2, NULL),
+(1000, '2025-08-05', '2026-08-05', 0, 3, NULL),
+(450, '2025-09-12', '2026-09-12', 0, 4, NULL),
+(500, '2025-10-20', '2026-10-20', 0, 5, NULL),
+(100, '2025-11-05', '2026-11-05', 0, 6, NULL),
+(800, '2025-11-20', '2026-11-20', 0, 7, NULL),
+(600, '2025-12-01', '2026-12-01', 0, 8, NULL),
+(250, '2025-12-15', '2026-12-15', 0, 9, NULL),
+(400, '2026-01-10', '2027-01-10', 0, 10, NULL);
+
+
+/*INSERT INTO metodo_pago (met_pag_descripcion) VALUES
 ('Tarjeta de crédito Visa'),
 ('Tarjeta débito Mastercard'),
 ('Pago móvil'),
@@ -737,9 +924,11 @@ INSERT INTO metodo_pago (met_pag_descripcion) VALUES
 ('Cheque'),
 ('Depósito bancario'),
 ('Criptomoneda Bitcoin'),
-('Pago con millas');
+('Pago con millas'); */
 
 -- Detalles de métodos de pago
+
+/*
 INSERT INTO tarjeta_credito (met_pago_codigo, tar_cre_numero, tar_cre_cvv, tar_cre_fecha_vencimiento, tar_cre_banco_emisor, tar_cre_nombre_titular) VALUES
 (1, '4111111111111111', '123', '2027-12-31', 'Banco de Venezuela', 'Juan Pérez');
 
@@ -769,150 +958,150 @@ INSERT INTO criptomoneda (met_pago_codigo, cri_hash_transaccion, cri_direccion_b
 
 INSERT INTO milla_pago (met_pag_codigo, mil_codigo, mil_cantidad_utilizada) VALUES
 (10, NULL, 0);
-
+*/
 -- =====================================================
--- 30. COMPRAS Y SERVICIOS COMBINADOS
+-- 30. COMPRAS Y SERVICIOS COMBINADOS (ACTUALIZADO SIN PUE_TRAS)
 -- =====================================================
--- Compras para los primeros 10 clientes (cada uno con 2 viajeros)
--- Cada compra combina al menos 2 servicios
+-- Compras para los primeros 10 clientes (IDs 97 a 106 generados en Secc. 14)
 
--- Compra 1: Cliente 1 - Vuelo + Hotel
+-- Compra 1: Cliente 97 - Vuelo + Hotel
+
+/*
 INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento)
 VALUES (530.00, 500.00, '2025-06-01', 97, NULL);
 
--- Detalle 1: Traslado aéreo
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (1, '2025-06-01', '10:00:00', 250.00, 250.00, 1, 1, 1, NULL, 'Confirmada');
-
--- Asignar puesto del traslado
-INSERT INTO pue_tras (fk_tras_codigo, fk_pue_codigo, fk_med_tra_codigo, fk_paq_tur_codigo)
-VALUES (1, 1, 1, NULL);
-
-UPDATE detalle_reserva SET fk_pue_tras = 1, fk_pue_tras1 = 1, fk_pue_tras2 = 1
-WHERE fk_compra = 1 AND det_res_codigo = 1;
+-- Detalle 1: Traslado aéreo (Traslado ID 1)
+-- Se usa la columna fk_traslado en lugar de insertar en pue_tras
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (1, '2025-06-01', '10:00:00', 250.00, 250.00, 1, 1, 1, NULL, 1, 'Confirmada');
 
 -- Detalle 2: Estadía hotel
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (2, '2025-06-01', '10:05:00', 280.00, 250.00, 1, 1, 1, NULL, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (2, '2025-06-01', '10:05:00', 280.00, 250.00, 1, 1, 1, NULL, NULL, 'Confirmada');
 
--- Reserva de habitación
 INSERT INTO reserva_de_habitacion (res_hab_fecha_hora_inicio, res_hab_fecha_hora_fin, res_hab_costo_unitario, fk_habitacion, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
-VALUES ('2025-06-15 14:00:00', '2025-06-18 12:00:00', 80.00, 1, 1, 2, NULL);
+VALUES ('2025-06-15 14:00:00', '2025-06-18 12:00:00', 80.00, 1, 1, 2, NULL); -- Nota: fk_detalle_reserva=1 (compra), fk_detalle_reserva_2=2 (detalle) según tu modelo alter.sql
 
--- Compra 2: Cliente 2 - Tour + Restaurante
+
+-- Compra 2: Cliente 98 - Tour + Restaurante
 INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento)
 VALUES (465.00, 430.00, '2025-07-10', 98, NULL);
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (1, '2025-07-10', '11:00:00', 350.00, 350.00, 3, 1, 2, 1, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (1, '2025-07-10', '11:00:00', 350.00, 350.00, 3, 1, 2, 1, NULL, 'Confirmada');
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (2, '2025-07-10', '11:10:00', 115.00, 80.00, 3, 1, 2, NULL, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (2, '2025-07-10', '11:10:00', 115.00, 80.00, 3, 1, 2, NULL, NULL, 'Confirmada');
 
 INSERT INTO reserva_restaurante (res_rest_fecha_hora, res_rest_num_mesa, res_rest_tamano_mesa, fk_restaurante, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
 VALUES ('2025-07-15 19:00:00', 5, 4, 1, 2, 2, NULL);
 
--- Compra 3: Cliente 3 - Paquete turístico completo
+
+-- Compra 3: Cliente 99 - Paquete turístico completo
 INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento)
 VALUES (1200.00, 1100.00, '2025-08-05', 99, NULL);
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_paquete_turistico, det_res_estado)
-VALUES (1, '2025-08-05', '09:00:00', 1200.00, 1100.00, 5, 1, 3, 1, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_paquete_turistico, fk_traslado, det_res_estado)
+VALUES (1, '2025-08-05', '09:00:00', 1200.00, 1100.00, 5, 1, 3, 1, NULL, 'Confirmada');
 
--- Compra 4: Cliente 4 - Vuelo + Servicio
+
+-- Compra 4: Cliente 100 - Vuelo + Servicio
 INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento)
 VALUES (400.00, 380.00, '2025-09-12', 100, NULL);
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (1, '2025-09-12', '15:00:00', 220.00, 220.00, 7, 1, 4, 7, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (1, '2025-09-12', '15:00:00', 220.00, 220.00, 7, 1, 4, 7, NULL, 'Confirmada');
 
-INSERT INTO pue_tras (fk_tras_codigo, fk_pue_codigo, fk_med_tra_codigo, fk_paq_tur_codigo)
-VALUES (5, 1, 5, NULL);
+-- Detalle 2: Vuelo (Traslado ID 5)
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (2, '2025-09-12', '15:05:00', 180.00, 160.00, 7, 1, 4, NULL, 5, 'Confirmada');
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_pue_tras, fk_pue_tras1, fk_pue_tras2, det_res_estado)
-VALUES (2, '2025-09-12', '15:05:00', 180.00, 160.00, 7, 1, 4, 2, 5, 5, 'Confirmada');
 
--- Compra 5: Cliente 5 - Hotel + Tour
+-- Compra 5: Cliente 101 - Hotel + Tour
 INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento)
 VALUES (530.00, 500.00, '2025-10-20', 101, NULL);
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (1, '2025-10-20', '12:00:00', 350.00, 350.00, 9, 1, 5, 4, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (1, '2025-10-20', '12:00:00', 350.00, 350.00, 9, 1, 5, 4, NULL, 'Confirmada');
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (2, '2025-10-20', '12:10:00', 180.00, 150.00, 9, 1, 5, NULL, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (2, '2025-10-20', '12:10:00', 180.00, 150.00, 9, 1, 5, NULL, NULL, 'Confirmada');
 
 INSERT INTO reserva_de_habitacion (res_hab_fecha_hora_inicio, res_hab_fecha_hora_fin, res_hab_costo_unitario, fk_habitacion, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
 VALUES ('2025-10-25 14:00:00', '2025-10-27 12:00:00', 80.00, 2, 5, 2, NULL);
 
--- Compra 6: Cliente 6 - Traslado + Servicio
+
+-- Compra 6: Cliente 102 - Traslado + Servicio
 INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento)
 VALUES (210.00, 200.00, '2025-11-05', 102, NULL);
 
-INSERT INTO pue_tras (fk_tras_codigo, fk_pue_codigo, fk_med_tra_codigo, fk_paq_tur_codigo)
-VALUES (3, 1, 3, NULL);
+-- Detalle 1: Traslado (ID 3)
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (1, '2025-11-05', '08:00:00', 30.00, 30.00, 11, 1, 6, NULL, 3, 'Confirmada');
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_pue_tras, fk_pue_tras1, fk_pue_tras2, det_res_estado)
-VALUES (1, '2025-11-05', '08:00:00', 30.00, 30.00, 11, 1, 6, 3, 3, 3, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (2, '2025-11-05', '08:10:00', 180.00, 170.00, 11, 1, 6, 2, NULL, 'Confirmada');
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (2, '2025-11-05', '08:10:00', 180.00, 170.00, 11, 1, 6, 2, 'Confirmada');
 
--- Compra 7: Cliente 7 - Paquete turístico
+-- Compra 7: Cliente 103 - Paquete turístico
 INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento)
 VALUES (950.00, 900.00, '2025-11-20', 103, NULL);
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_paquete_turistico, det_res_estado)
-VALUES (1, '2025-11-20', '10:00:00', 950.00, 900.00, 13, 1, 7, 2, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_paquete_turistico, fk_traslado, det_res_estado)
+VALUES (1, '2025-11-20', '10:00:00', 950.00, 900.00, 13, 1, 7, 2, NULL, 'Confirmada');
 
--- Compra 8: Cliente 8 - Vuelo + Hotel + Tour
+
+-- Compra 8: Cliente 104 - Vuelo + Hotel + Tour
 INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento)
 VALUES (810.00, 780.00, '2025-12-01', 104, NULL);
 
-INSERT INTO pue_tras (fk_tras_codigo, fk_pue_codigo, fk_med_tra_codigo, fk_paq_tur_codigo)
-VALUES (2, 1, 2, NULL);
+-- Detalle 1: Vuelo (Traslado ID 2)
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (1, '2025-12-01', '09:00:00', 180.00, 180.00, 15, 1, 8, NULL, 2, 'Confirmada');
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_pue_tras, fk_pue_tras1, fk_pue_tras2, det_res_estado)
-VALUES (1, '2025-12-01', '09:00:00', 180.00, 180.00, 15, 1, 8, 4, 2, 2, 'Confirmada');
-
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (2, '2025-12-01', '09:10:00', 450.00, 420.00, 15, 1, 8, NULL, 'Confirmada');
+-- Detalle 2: Hotel
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (2, '2025-12-01', '09:10:00', 450.00, 420.00, 15, 1, 8, NULL, NULL, 'Confirmada');
 
 INSERT INTO reserva_de_habitacion (res_hab_fecha_hora_inicio, res_hab_fecha_hora_fin, res_hab_costo_unitario, fk_habitacion, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
 VALUES ('2025-12-10 14:00:00', '2025-12-15 12:00:00', 80.00, 3, 8, 2, NULL);
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (3, '2025-12-01', '09:20:00', 180.00, 180.00, 15, 1, 8, 2, 'Confirmada');
+-- Detalle 3: Tour
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (3, '2025-12-01', '09:20:00', 180.00, 180.00, 15, 1, 8, 2, NULL, 'Confirmada');
 
--- Compra 9: Cliente 9 - Tour + Restaurante
+
+-- Compra 9: Cliente 105 - Tour + Restaurante
 INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento)
 VALUES (445.00, 430.00, '2025-12-15', 105, NULL);
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (1, '2025-12-15', '11:00:00', 350.00, 350.00, 17, 1, 9, 1, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (1, '2025-12-15', '11:00:00', 350.00, 350.00, 17, 1, 9, 1, NULL, 'Confirmada');
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (2, '2025-12-15', '11:10:00', 95.00, 80.00, 17, 1, 9, 6, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (2, '2025-12-15', '11:10:00', 95.00, 80.00, 17, 1, 9, 6, NULL, 'Confirmada');
 
 INSERT INTO reserva_restaurante (res_rest_fecha_hora, res_rest_num_mesa, res_rest_tamano_mesa, fk_restaurante, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
 VALUES ('2025-12-20 20:00:00', 8, 4, 2, 9, 2, NULL);
 
--- Compra 10: Cliente 10 - Hotel + Tour
+
+-- Compra 10: Cliente 106 - Hotel + Tour
 INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario, fk_plan_financiamiento)
 VALUES (500.00, 480.00, '2026-01-10', 106, NULL);
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (1, '2026-01-10', '10:00:00', 320.00, 300.00, 19, 1, 10, NULL, 'Confirmada');
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (1, '2026-01-10', '10:00:00', 320.00, 300.00, 19, 1, 10, NULL, NULL, 'Confirmada');
 
 INSERT INTO reserva_de_habitacion (res_hab_fecha_hora_inicio, res_hab_fecha_hora_fin, res_hab_costo_unitario, fk_habitacion, fk_detalle_reserva, fk_detalle_reserva_2, fk_paquete_turistico)
 VALUES ('2026-01-20 14:00:00', '2026-01-24 12:00:00', 80.00, 4, 10, 1, NULL);
 
-INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
-VALUES (2, '2026-01-10', '10:10:00', 180.00, 180.00, 19, 1, 10, 2, 'Confirmada');
-
+INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_traslado, det_res_estado)
+VALUES (2, '2026-01-10', '10:10:00', 180.00, 180.00, 19, 1, 10, 2, NULL, 'Confirmada');
+*/
 -- =====================================================
 -- 31. PAGOS (10 registros)
 -- =====================================================
+/*
 INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago) VALUES
 (530.00, '2025-06-01 10:30:00', 'USD', 1, 1, 1),
 (465.00, '2025-07-10 11:30:00', 'USD', 2, 2, 2),
@@ -924,21 +1113,21 @@ INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tas
 (810.00, '2025-12-01 09:30:00', 'USD', 8, 3, 8),
 (445.00, '2025-12-15 11:30:00', 'USD', 9, 3, 9),
 (500.00, '2026-01-10 10:30:00', 'USD', 10, 3, 1);
-
+*/
 -- =====================================================
 -- 32. MILLAS GENERADAS (10 registros)
 -- =====================================================
 INSERT INTO milla (mil_valor_obtenido, mil_fecha_inicio, mil_fecha_fin, mil_valor_restado, fk_compra, fk_pago) VALUES
-(500, '2025-06-01', '2026-06-01', 0, 1, 1),
-(200, '2025-07-10', '2026-07-10', 0, 2, 2),
-(1000, '2025-08-05', '2026-08-05', 0, 3, 3),
-(450, '2025-09-12', '2026-09-12', 0, 4, 4),
-(500, '2025-10-20', '2026-10-20', 0, 5, 5),
-(100, '2025-11-05', '2026-11-05', 0, 6, 6),
-(800, '2025-11-20', '2026-11-20', 0, 7, 7),
-(600, '2025-12-01', '2026-12-01', 0, 8, 8),
-(250, '2025-12-15', '2026-12-15', 0, 9, 9),
-(400, '2026-01-10', '2027-01-10', 0, 10, 10);
+(500, '2025-06-01', '2026-06-01', 0, 1, NULL),
+(200, '2025-07-10', '2026-07-10', 0, 2, NULL),
+(1000, '2025-08-05', '2026-08-05', 0, 3, NULL),
+(450, '2025-09-12', '2026-09-12', 0, 4, NULL),
+(500, '2025-10-20', '2026-10-20', 0, 5, NULL),
+(100, '2025-11-05', '2026-11-05', 0, 6, NULL),
+(800, '2025-11-20', '2026-11-20', 0, 7, NULL),
+(600, '2025-12-01', '2026-12-01', 0, 8, NULL),
+(250, '2025-12-15', '2026-12-15', 0, 9, NULL),
+(400, '2026-01-10', '2027-01-10', 0, 10, NULL);
 
 -- =====================================================
 -- 33. ESTADOS (10 registros)
@@ -1008,35 +1197,35 @@ INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_tras
 (106, 10, 10, 10);
 
 -- =====================================================
--- 38. RESEÑAS (10 registros)
+-- 38. RESEÑAS (10 registros CORREGIDOS)
 -- =====================================================
+-- La lógica es: (..., fk_compra_correcta, id_detalle_correcto)
 INSERT INTO resena (res_calificacion_numerica, res_descripcion, res_fecha_hota_creacion, fk_detalle_reserva, fk_detalle_reserva_2) VALUES
-(5, 'Excelente servicio', '2025-06-20 10:00:00', 1, 1),
-(4, 'Muy buena experiencia', '2025-07-25 11:00:00', 2, 1),
-(5, 'Recomendado totalmente', '2025-08-20 12:00:00', 3, 1),
-(3, 'Aceptable', '2025-09-20 13:00:00', 4, 1),
-(4, 'Buen servicio', '2025-10-30 14:00:00', 5, 1),
-(5, 'Perfecto', '2025-11-10 15:00:00', 6, 1),
-(4, 'Muy satisfecho', '2025-11-25 16:00:00', 7, 1),
-(5, 'Increíble experiencia', '2025-12-20 17:00:00', 8, 1),
-(4, 'Recomendable', '2025-12-25 18:00:00', 9, 1),
-(5, 'Excelente', '2026-01-25 19:00:00', 10, 1);
+(5, 'Excelente servicio', '2025-06-20 10:00:00', 1, 1), -- Compra 1, Detalle 1
+(4, 'Muy buena experiencia', '2025-07-25 11:00:00', 1, 2), -- Compra 1, Detalle 2
+(5, 'Recomendado totalmente', '2025-08-20 12:00:00', 2, 3), -- Compra 2, Detalle 3
+(3, 'Aceptable', '2025-09-20 13:00:00', 2, 4), -- Compra 2, Detalle 4
+(4, 'Buen servicio', '2025-10-30 14:00:00', 3, 5), -- Compra 3, Detalle 5
+(5, 'Perfecto', '2025-11-10 15:00:00', 4, 6), -- Compra 4, Detalle 6
+(4, 'Muy satisfecho', '2025-11-25 16:00:00', 4, 7), -- Compra 4, Detalle 7
+(5, 'Increíble experiencia', '2025-12-20 17:00:00', 5, 8), -- Compra 5, Detalle 8
+(4, 'Recomendable', '2025-12-25 18:00:00', 5, 9), -- Compra 5, Detalle 9
+(5, 'Excelente', '2026-01-25 19:00:00', 6, 10); -- Compra 6, Detalle 10
 
 -- =====================================================
--- 39. RECLAMOS (10 registros)
+-- 39. RECLAMOS (10 registros CORREGIDOS)
 -- =====================================================
 INSERT INTO reclamo (rec_contenido, rec_fecha_hora, fk_detalle_reserva, fk_detalle_reserva_2) VALUES
 ('Retraso en el vuelo', '2025-06-16 10:00:00', 1, 1),
-('Habitación no disponible', '2025-07-21 11:00:00', 2, 2),
-('Servicio no prestado', '2025-08-16 12:00:00', 3, 1),
-('Comida fría', '2025-09-16 13:00:00', 4, 2),
-('Guía no llegó', '2025-10-26 14:00:00', 5, 1),
-('Bus en mal estado', '2025-11-06 15:00:00', 6, 1),
-('Hotel sucio', '2025-11-21 16:00:00', 7, 1),
-('Tour cancelado', '2025-12-16 17:00:00', 8, 3),
-('Mesa no reservada', '2025-12-21 18:00:00', 9, 2),
-('Paquete incompleto', '2026-01-21 19:00:00', 10, 2);
-
+('Habitación no disponible', '2025-07-21 11:00:00', 1, 2),
+('Servicio no prestado', '2025-08-16 12:00:00', 2, 3),
+('Comida fría', '2025-09-16 13:00:00', 2, 4),
+('Guía no llegó', '2025-10-26 14:00:00', 3, 5),
+('Bus en mal estado', '2025-11-06 15:00:00', 4, 6),
+('Hotel sucio', '2025-11-21 16:00:00', 4, 7),
+('Tour cancelado', '2025-12-16 17:00:00', 5, 8),
+('Mesa no reservada', '2025-12-21 18:00:00', 5, 9),
+('Paquete incompleto', '2026-01-21 19:00:00', 6, 10);
 -- =====================================================
 -- 40. COMPENSACIONES (10 registros)
 -- =====================================================
@@ -1055,3 +1244,7 @@ INSERT INTO compensacion (com_co2_compensado, com_monto_agregado, fk_compra) VAL
 -- =====================================================
 -- SCRIPT COMPLETADO EXITOSAMENTE
 -- =====================================================
+
+/* =========================================================
+   SECCIÓN MELANIE
+   ========================================================= */

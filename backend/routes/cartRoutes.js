@@ -6,5 +6,5 @@ const cartController = require('../controllers/cartController');
 
 router.post('/checkout', cartController.processCheckout);
 router.post('/tickets', cartController.getMyTickets);
-
+router.post('/scan', cartController.markTicketUsed);
 module.exports = router;

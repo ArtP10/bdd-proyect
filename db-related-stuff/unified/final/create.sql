@@ -290,9 +290,7 @@ CREATE TABLE detalle_reserva(
     fk_compra INTEGER NOT NULL,
     fk_servicio INTEGER,
     fk_paquete_turistico INTEGER,
-    fk_pue_tras INTEGER,
-    fk_pue_tras1 INTEGER,
-    fk_pue_tras2 INTEGER,
+    fk_traslado INTEGER,
     det_res_estado VARCHAR(50) NOT NULL,
     PRIMARY KEY (fk_compra, det_res_codigo)
 );
@@ -314,9 +312,17 @@ CREATE TABLE compra(
     fk_plan_financiamiento INTEGER
 );
 
+-- 1. PRIMERO el catálogo para que no falle la FK
+CREATE TABLE tipo_metodo_pago(
+    tip_met_codigo SERIAL PRIMARY KEY,
+    tip_met_nombre VARCHAR(50) NOT NULL
+);
+
+-- 2. LUEGO la tabla transaccional padre
 CREATE TABLE metodo_pago(
     met_pag_codigo SERIAL PRIMARY KEY,
-    met_pag_descripcion VARCHAR(200)
+    met_pag_descripcion VARCHAR(200),
+    fk_tipo_metodo INTEGER -- Se vincula en alter.sql
 );
 
 CREATE TABLE tasa_de_cambio(
@@ -327,14 +333,15 @@ CREATE TABLE tasa_de_cambio(
     tas_cam_moneda VARCHAR(50) NOT NULL   
 );
 
+-- 3. Tabla Pago
 CREATE TABLE pago(
     pag_codigo SERIAL PRIMARY KEY,
     pag_monto NUMERIC(10,2) NOT NULL,
     pag_fecha_hora TIMESTAMP NOT NULL,
     pag_denominacion VARCHAR(50) NOT NULL,
-    fk_compra INTEGER NOT NULL,
-    fk_tasa_de_cambio INTEGER NOT NULL,
-    fk_metodo_pago INTEGER NOT NULL
+    fk_compra INTEGER NOT NULL, 
+    fk_tasa_de_cambio INTEGER NOT NULL, 
+    fk_metodo_pago INTEGER NOT NULL 
 );
 
 CREATE TABLE reembolso(
@@ -345,9 +352,12 @@ CREATE TABLE reembolso(
     fk_pago INTEGER NOT NULL
 );
 
--- Tablas de detalle de pago
+-- 4. Tablas Hijas de Métodos de Pago (SOLO UNA VEZ)
+-- Nota: Quitamos "REFERENCES metodo_pago" aquí porque ya está en alter.sql
+-- Esto evita errores de duplicidad de constraints.
+
 CREATE TABLE tarjeta_credito(
-    met_pago_codigo SERIAL PRIMARY KEY,
+    met_pago_codigo INTEGER PRIMARY KEY, -- FK en alter
     tar_cre_numero VARCHAR(20) NOT NULL,
     tar_cre_cvv VARCHAR(10) NOT NULL,
     tar_cre_fecha_vencimiento DATE NOT NULL,
@@ -357,7 +367,7 @@ CREATE TABLE tarjeta_credito(
 );
 
 CREATE TABLE tarjeta_debito(
-    met_pago_codigo SERIAL PRIMARY KEY,
+    met_pago_codigo INTEGER PRIMARY KEY, -- FK en alter
     tar_deb_numero VARCHAR(20) NOT NULL,
     tar_deb_cvv VARCHAR(10) NOT NULL,
     tar_deb_fecha_vencimiento DATE NOT NULL,
@@ -367,7 +377,7 @@ CREATE TABLE tarjeta_debito(
 );
 
 CREATE TABLE cheque(
-    met_pago_codigo SERIAL PRIMARY KEY,
+    met_pago_codigo INTEGER PRIMARY KEY, -- FK en alter
     che_codigo_cuenta_cliente varchar(50) NOT NULL,
     che_numero varchar(50) NOT NULL,
     che_nombre_titular VARCHAR(100) NOT NULL,
@@ -376,7 +386,7 @@ CREATE TABLE cheque(
 );
 
 CREATE TABLE deposito_bancario(
-    met_pago_codigo SERIAL PRIMARY KEY,
+    met_pago_codigo INTEGER PRIMARY KEY, -- FK en alter
     dep_ban_numero_cuenta varchar(50) NOT NULL,
     dep_ban_banco_emisor VARCHAR(100) NOT NULL,
     dep_ban_numero_referencia varchar(50),
@@ -384,40 +394,40 @@ CREATE TABLE deposito_bancario(
 );
 
 CREATE TABLE transferencia_bancaria(
-    met_pago_codigo SERIAL PRIMARY KEY,
-    trans_ban_numero_referencia INTEGER,
+    met_pago_codigo INTEGER PRIMARY KEY, -- FK en alter
+    trans_ban_numero_referencia BIGINT, 
     trans_ban_fecha_hora TIMESTAMP,
     tras_ban_numero_cuenta_emisora varchar(50) NOT NULL
 );
 
 CREATE TABLE pago_movil_interbancario(
-    met_pago_codigo SERIAL PRIMARY KEY,
-    pag_movil_int_numero_referencia VARCHAR(15),
+    met_pago_codigo INTEGER PRIMARY KEY, -- FK en alter
+    pag_movil_int_numero_referencia VARCHAR(50),
     pag_movil_int_fecha_hora TIMESTAMP
 );
 
 CREATE TABLE criptomoneda(
-    met_pago_codigo SERIAL PRIMARY KEY,
-    cri_hash_transaccion VARCHAR(50),
+    met_pago_codigo INTEGER PRIMARY KEY, -- FK en alter
+    cri_hash_transaccion VARCHAR(100),
     cri_direccion_billetera_emisora VARCHAR(100) NOT NULL
 );
 
 CREATE TABLE zelle(
-    met_pago_codigo SERIAL PRIMARY KEY,
-    zel_titular_cuenta VARCHAR(15) NOT NULL,
+    met_pago_codigo INTEGER PRIMARY KEY, -- FK en alter
+    zel_titular_cuenta VARCHAR(100) NOT NULL,
     zel_correo_electronico VARCHAR(100) NOT NULL,
     zel_codigo_transaccion VARCHAR(50) UNIQUE
 );
 
 CREATE TABLE efectivo(
-    met_pago_codigo SERIAL PRIMARY KEY,
+    met_pago_codigo INTEGER PRIMARY KEY, -- FK en alter
     efe_moneda varchar(50),
     efe_codigo VARCHAR(100)
 );
 
 CREATE TABLE milla_pago(
-    met_pag_codigo SERIAL PRIMARY KEY,
-    mil_codigo INTEGER UNIQUE,
+    met_pag_codigo INTEGER PRIMARY KEY, -- FK en alter
+    mil_codigo INTEGER, 
     mil_cantidad_utilizada INTEGER
 );
 
@@ -512,7 +522,8 @@ CREATE TABLE cuota(
     cuo_monto NUMERIC(10,2) NOT NULL,
     cuo_fecha_tope DATE NOT NULL,
     cuo_fecha_fin DATE,
-    fk_plan_financiamiento INTEGER NOT NULL
+    fk_plan_financiamiento INTEGER NOT NULL,
+    cuo_tiene_mora BOOLEAN DEFAULT FALSE
 );
 
 CREATE TABLE estado(

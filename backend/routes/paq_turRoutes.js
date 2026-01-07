@@ -12,6 +12,8 @@ router.get('/paquetes/:id/detalles', controller.getPackageDetails);
 // 2. Reglas
 router.post('/reglas', controller.createRule);
 router.get('/reglas', controller.getRules);
+router.put('/reglas/:id', controller.updateRule); 
+router.delete('/reglas/:id', controller.deleteRule);
 router.post('/asignar-regla', controller.assignRuleToPackage);
 router.post('/paquetes/eliminar-elemento', controller.removePackageElement);
 

@@ -1,0 +1,197 @@
+-- ================================================================
+-- 1. FUNCIÓN DE APOYO PARA COMPARAR VALORES (Texto y Números)
+-- ================================================================
+CREATE OR REPLACE FUNCTION fn_cumple_regla(
+    val_real TEXT, 
+    operador VARCHAR, 
+    val_esperado TEXT,
+    es_numero BOOLEAN
+) RETURNS BOOLEAN AS $$
+DECLARE
+    v_num_real NUMERIC;
+    v_num_esp NUMERIC;
+BEGIN
+    -- Comparación Numérica (Edad, Millas, Cantidad)
+    IF es_numero THEN
+        v_num_real := CAST(val_real AS NUMERIC);
+        v_num_esp := CAST(val_esperado AS NUMERIC);
+        
+        IF operador = '=' THEN RETURN v_num_real = v_num_esp;
+        ELSIF operador = '>' THEN RETURN v_num_real > v_num_esp;
+        ELSIF operador = '<' THEN RETURN v_num_real < v_num_esp;
+        ELSIF operador = '>=' THEN RETURN v_num_real >= v_num_esp;
+        ELSIF operador = '<=' THEN RETURN v_num_real <= v_num_esp;
+        ELSIF operador = '<>' THEN RETURN v_num_real <> v_num_esp;
+        END IF;
+    
+    -- Comparación de Texto (Estado Civil, Nacionalidad, Lugar)
+    ELSE
+        IF operador = '=' THEN RETURN LOWER(val_real) = LOWER(val_esperado);
+        ELSIF operador = '<>' THEN RETURN LOWER(val_real) <> LOWER(val_esperado);
+        -- Para texto, > o < no tienen mucho sentido en este contexto, retornamos false
+        ELSE RETURN FALSE; 
+        END IF;
+    END IF;
+    
+    RETURN FALSE;
+EXCEPTION WHEN OTHERS THEN
+    RETURN FALSE; -- Si falla el cast o algo más, asumimos que no cumple
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- ================================================================
+-- 2. PROCEDIMIENTO MAESTRO DE VALIDACIÓN
+-- ================================================================
+CREATE OR REPLACE PROCEDURE sp_validar_reglas_compra(
+    IN i_usuario_id INTEGER,
+    IN i_json_items JSON,    -- Array de items [{tipo, id}, ...]
+    IN i_json_viajeros JSON, -- Array de IDs de viajeros [1, 2, 5]
+    INOUT o_valido BOOLEAN DEFAULT TRUE,
+    INOUT o_mensaje VARCHAR DEFAULT NULL
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_item RECORD;
+    v_paq_id INTEGER;
+    v_paq_nombre VARCHAR;
+    v_regla RECORD;
+    
+    v_viajero_id INTEGER;
+    v_viajero_nombre VARCHAR;
+    v_viajero_json JSON;
+    
+    -- Variables para atributos calculados
+    v_edad INTEGER;
+    v_millas INTEGER;
+    v_estado_civil VARCHAR;
+    v_nacionalidad VARCHAR;
+    v_lugar_usuario VARCHAR;
+    v_cant_viajeros INTEGER;
+    
+    v_valor_real TEXT;
+    v_es_numerico BOOLEAN;
+    v_cumple BOOLEAN;
+BEGIN
+    -- Calcular cantidad de viajeros una sola vez
+    v_cant_viajeros := json_array_length(i_json_viajeros);
+
+    -- 1. RECORRER LOS ITEMS DEL CARRITO
+    FOR v_item IN SELECT * FROM json_to_recordset(i_json_items) AS x(tipo text, id int) LOOP
+        
+        -- Solo nos interesan los PAQUETES
+        IF v_item.tipo = 'paquete' THEN
+            v_paq_id := v_item.id;
+            
+            -- Obtener nombre del paquete para el mensaje de error
+            SELECT paq_tur_nombre INTO v_paq_nombre FROM paquete_turistico WHERE paq_tur_codigo = v_paq_id;
+
+            -- 2. BUSCAR LAS REGLAS DE ESE PAQUETE
+            FOR v_regla IN 
+                SELECT rp.reg_paq_atributo, rp.reg_paq_operador, rp.reg_paq_valor
+                FROM reg_paq_paq rpp
+                JOIN regla_paquete rp ON rpp.fk_reg_paq_codigo = rp.reg_paq_codigo
+                WHERE rpp.fk_paq_tur_codigo = v_paq_id
+            LOOP
+                
+                -- 3. VALIDAR SEGÚN EL TIPO DE REGLA
+                
+                -- CASO A: Reglas Globales (Afectan al grupo o al usuario comprador)
+                IF v_regla.reg_paq_atributo = 'usuario_millas' THEN
+                    SELECT usu_total_millas INTO v_millas FROM usuario WHERE usu_codigo = i_usuario_id;
+                    v_cumple := fn_cumple_regla(v_millas::TEXT, v_regla.reg_paq_operador, v_regla.reg_paq_valor, TRUE);
+                    
+                    IF NOT v_cumple THEN
+                        o_valido := FALSE;
+                        o_mensaje := 'Error en Paquete "' || v_paq_nombre || '": El usuario requiere ' || v_regla.reg_paq_operador || ' ' || v_regla.reg_paq_valor || ' millas (Tienes: ' || v_millas || ').';
+                        RETURN; -- Salimos inmediatamente
+                    END IF;
+
+                ELSIF v_regla.reg_paq_atributo = 'reserva_cantidad' THEN
+                    v_cumple := fn_cumple_regla(v_cant_viajeros::TEXT, v_regla.reg_paq_operador, v_regla.reg_paq_valor, TRUE);
+                    
+                    IF NOT v_cumple THEN
+                        o_valido := FALSE;
+                        o_mensaje := 'Error en Paquete "' || v_paq_nombre || '": Se requieren ' || v_regla.reg_paq_operador || ' ' || v_regla.reg_paq_valor || ' viajeros (Seleccionaste: ' || v_cant_viajeros || ').';
+                        RETURN;
+                    END IF;
+
+                ELSIF v_regla.reg_paq_atributo = 'usuario_estado' THEN
+                    SELECT l.lug_nombre INTO v_lugar_usuario 
+                    FROM usuario u JOIN lugar l ON u.fk_lugar = l.lug_codigo 
+                    WHERE u.usu_codigo = i_usuario_id;
+                    
+                    v_cumple := fn_cumple_regla(v_lugar_usuario, v_regla.reg_paq_operador, v_regla.reg_paq_valor, FALSE);
+                    
+                    IF NOT v_cumple THEN
+                        o_valido := FALSE;
+                        o_mensaje := 'Error en Paquete "' || v_paq_nombre || '": Disponible solo para residentes de ' || v_regla.reg_paq_valor || '.';
+                        RETURN;
+                    END IF;
+
+                -- CASO B: Reglas Individuales (Se debe validar CADA viajero)
+                ELSE
+                    FOR v_viajero_json IN SELECT * FROM json_array_elements(i_json_viajeros) LOOP
+                        v_viajero_id := (v_viajero_json::text)::integer;
+                        
+                        -- Obtener datos base del viajero
+                        SELECT via_prim_nombre || ' ' || via_prim_apellido, 
+                               EXTRACT(YEAR FROM AGE(CURRENT_DATE, via_fecha_nacimiento))::INTEGER
+                        INTO v_viajero_nombre, v_edad
+                        FROM viajero WHERE via_codigo = v_viajero_id;
+
+                        -- Determinar qué validar
+                        IF v_regla.reg_paq_atributo = 'viajero_edad' THEN
+                            v_valor_real := v_edad::TEXT;
+                            v_es_numerico := TRUE;
+                            
+                        ELSIF v_regla.reg_paq_atributo = 'viajero_estado_civil' THEN
+                            -- Busca el último estado civil activo (fecha_fin null)
+                            SELECT ec.edo_civ_nombre INTO v_estado_civil
+                            FROM via_edo ve
+                            JOIN estado_civil ec ON ve.fk_edo_codigo = ec.edo_civ_codigo
+                            WHERE ve.fk_via_codigo = v_viajero_id AND ve.via_edo_fecha_fin IS NULL
+                            LIMIT 1;
+                            
+                            v_valor_real := COALESCE(v_estado_civil, 'Soltero'); -- Default si no tiene historial
+                            v_es_numerico := FALSE;
+
+                        ELSIF v_regla.reg_paq_atributo = 'viajero_nacionalidad' THEN
+                            -- Busca la nacionalidad del pasaporte más reciente
+                            SELECT n.nac_nombre INTO v_nacionalidad
+                            FROM documento d
+                            JOIN nacionalidad n ON d.fk_nac_codigo = n.nac_codigo
+                            WHERE d.fk_via_codigo = v_viajero_id
+                            ORDER BY d.doc_fecha_emision DESC LIMIT 1;
+
+                            v_valor_real := COALESCE(v_nacionalidad, 'Desconocida');
+                            v_es_numerico := FALSE;
+                        END IF;
+
+                        -- Evaluar
+                        v_cumple := fn_cumple_regla(v_valor_real, v_regla.reg_paq_operador, v_regla.reg_paq_valor, v_es_numerico);
+
+                        IF NOT v_cumple THEN
+                            o_valido := FALSE;
+                            o_mensaje := 'Error: El viajero ' || v_viajero_nombre || ' no cumple la regla de ' || 
+                                         REPLACE(v_regla.reg_paq_atributo, 'viajero_', '') || ' (' || 
+                                         v_valor_real || ' vs requerido ' || v_regla.reg_paq_operador || ' ' || v_regla.reg_paq_valor || 
+                                         ') para el paquete "' || v_paq_nombre || '".';
+                            RETURN; -- Detiene todo al primer error
+                        END IF;
+
+                    END LOOP; -- Fin loop viajeros
+                END IF; -- Fin IF tipo de atributo
+
+            END LOOP; -- Fin loop reglas
+        END IF; -- Fin IF es paquete
+    END LOOP; -- Fin loop items
+
+    -- Si llegamos aquí, todo pasó
+    o_valido := TRUE;
+    o_mensaje := 'Validación exitosa';
+END;
+$$;
+
+
+

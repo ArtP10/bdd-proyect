@@ -1,28 +1,59 @@
 const pool = require('../config/db');
 
-// Procesa el checkout
+// Procesa el checkout (Validación + Compra)
 const processCheckout = async (req, res) => {
     const { user_id, viajeros, items, pago } = req.body;
-
+    // viajeros: [1, 2, 3]
+    // items: [{tipo: 'paquete', id: 1}, ...]
+    
     const client = await pool.connect();
 
     try {
         await client.query('BEGIN');
 
+        // =================================================================
+        // PASO 1: VALIDACIÓN DE REGLAS DE NEGOCIO (NUEVO)
+        // =================================================================
+        // Verificamos edad, millas, ubicación, etc. antes de procesar nada.
+        
+        const validQuery = `CALL sp_validar_reglas_compra($1, $2, $3, NULL, NULL)`;
+        const validValues = [
+            user_id,
+            JSON.stringify(items),    // Enviamos items como JSON
+            JSON.stringify(viajeros)  // Enviamos IDs viajeros como JSON
+        ];
+
+        const validResult = await client.query(validQuery, validValues);
+        const validResp = validResult.rows[0]; // Postgres devuelve los OUT en rows[0]
+
+        // Si la validación falla (o_valido = false), detenemos todo.
+        if (validResp.o_valido === false) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ 
+                success: false, 
+                message: validResp.o_mensaje // Ej: "Error: El viajero Juan no tiene 18 años..."
+            });
+        }
+
+        // =================================================================
+        // PASO 2: CÁLCULO Y REGISTRO DE LA COMPRA (SI PASÓ LA VALIDACIÓN)
+        // =================================================================
+
         let planFinanciamiento = {};
         let totalCompra = 0;
         
+        // Calculamos el total aproximado (El SP final hará el cálculo real, pero esto sirve para el plan)
         items.forEach(i => {
             const precio = parseFloat(i.precio || i.costo || i.paq_tur_monto_total || 0);
             totalCompra += precio * viajeros.length;
         });
 
-        // Configurar Plan
+        // Configurar Plan de Financiamiento
         if (pago.plan === 'contado') {
             planFinanciamiento = { tipo: 'contado' };
         } else {
             const meses = pago.meses || (pago.plan === '3_meses' ? 3 : 12); 
-            const inicial = totalCompra * 0.5;
+            const inicial = totalCompra * 0.5; // Ejemplo: 50% de inicial
             planFinanciamiento = { 
                 tipo: 'credito', 
                 meses: meses, 
@@ -30,7 +61,7 @@ const processCheckout = async (req, res) => {
             };
         }
 
-        // Llamada al SP (8 parámetros)
+        // Llamada al SP de Registro de Compra (8 parámetros)
         const queryCompra = `CALL sp_registrar_compra($1, $2, $3, $4, NULL, NULL, NULL, NULL)`;
         const valuesCompra = [
             user_id, 
@@ -39,60 +70,35 @@ const processCheckout = async (req, res) => {
             JSON.stringify(planFinanciamiento)
         ];
 
-        const resCompra = await client.query(queryCompra, valuesCompra);
-        const dbCompra = resCompra.rows[0];
+        const resultCompra = await client.query(queryCompra, valuesCompra);
+        const respCompra = resultCompra.rows[0];
 
-        if (dbCompra.o_status !== 200) {
-            throw new Error(dbCompra.o_mensaje);
-        }
+        if (respCompra.o_status === 200) {
+            await client.query('COMMIT');
 
-        const compraId = dbCompra.o_compra_id;
+            // Datos útiles para el modal de pago
+            const compraId = respCompra.o_compra_id;
+            const montoAPagar = parseFloat(respCompra.o_total);
+            const origenTipo = (pago.plan === 'contado') ? 'compra' : 'cuota';
+            const origenId = (pago.plan === 'contado') ? compraId : respCompra.o_primera_cuota_id; 
 
-        // --- IDENTIFICAR EL PAGO INICIAL ---
-        let montoAPagar = 0;
-        let origenTipo = '';
-        let origenId = 0;
-
-        if (pago.plan === 'contado') {
-            montoAPagar = parseFloat(dbCompra.o_total);
-            origenTipo = 'compra';
-            origenId = compraId;
+            res.status(200).json({ 
+                success: true, 
+                message: respCompra.o_mensaje,
+                data: {
+                    compra_id: compraId,
+                    monto_pagar: montoAPagar,
+                    origen_tipo: origenTipo,
+                    origen_id: origenId
+                }
+            });
         } else {
-            // SI ES CRÉDITO: Buscamos la PRIMERA CUOTA por fecha (La inicial)
-            const resCuota = await client.query(
-                `SELECT cuo_codigo, cuo_monto FROM cuota 
-                 JOIN plan_financiamiento pf ON cuota.fk_plan_financiamiento = pf.plan_fin_codigo
-                 WHERE pf.fk_compra = $1 
-                 ORDER BY cuo_fecha_tope ASC 
-                 LIMIT 1`, 
-                [compraId]
-            );
-            
-            if (resCuota.rows.length > 0) {
-                montoAPagar = parseFloat(resCuota.rows[0].cuo_monto);
-                origenTipo = 'cuota';
-                origenId = resCuota.rows[0].cuo_codigo;
-            } else {
-                throw new Error("Error interno: No se generaron cuotas.");
-            }
+            throw new Error(respCompra.o_mensaje);
         }
-
-        await client.query('COMMIT');
-
-        res.status(200).json({ 
-            success: true, 
-            message: 'Reserva creada exitosamente. Proceda al pago.',
-            data: {
-                compra_id: compraId,
-                monto_pagar: montoAPagar,
-                origen_tipo: origenTipo,
-                origen_id: origenId
-            }
-        });
 
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error("Error Registrar Compra:", err);
+        console.error("Error Checkout:", err);
         res.status(400).json({ success: false, message: err.message });
     } finally {
         client.release();
@@ -109,7 +115,6 @@ const getMyTickets = async (req, res) => {
     }
 };
 
-
 const markTicketUsed = async (req, res) => {
     const { ticket_id } = req.body;
     try {
@@ -123,9 +128,12 @@ const markTicketUsed = async (req, res) => {
             res.status(400).json({ success: false, message: resp.o_mensaje });
         }
     } catch (err) {
-        console.error(err);
         res.status(500).json({ success: false, message: err.message });
     }
 };
 
-module.exports = { processCheckout, getMyTickets, markTicketUsed };
+module.exports = {
+    processCheckout,
+    getMyTickets,
+    markTicketUsed
+};

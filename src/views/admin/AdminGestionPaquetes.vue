@@ -3,11 +3,17 @@
     <div class="header-actions">
       <div>
         <h2>📦 Gestión de Paquetes</h2>
-        <p class="subtitle">Administra y configura los paquetes turísticos</p>
+        <p class="subtitle">Administra paquetes y reglas de negocio</p>
       </div>
-      <button @click="openCreateModal" class="btn-main">
-        <i class="fa-solid fa-plus"></i> Crear Paquete Base
-      </button>
+      
+      <div class="btn-group-header">
+        <button @click="openRuleManager" class="btn-secondary">
+            <i class="fa-solid fa-scale-balanced"></i> Gestionar Reglas
+        </button>
+        <button @click="openCreateModal" class="btn-main">
+            <i class="fa-solid fa-plus"></i> Crear Paquete Base
+        </button>
+      </div>
     </div>
 
     <div class="table-card">
@@ -95,6 +101,97 @@
       </div>
     </div>
 
+    <div v-if="showRuleManager" class="modal-backdrop" @click.self="showRuleManager=false">
+        <div class="modal-window large slide-in">
+            <div class="modal-header">
+                <h3>⚖️ Gestión de Reglas de Negocio</h3>
+                <button class="close-icon" @click="showRuleManager=false">✕</button>
+            </div>
+            <div class="modal-body">
+                
+                <div class="assign-form">
+                    <label>{{ isEditingRule ? '✏️ Editar Regla' : '✨ Nueva Regla' }}</label>
+                    <div class="input-group-row">
+                        
+                        <div class="form-group flex-grow">
+                            <select v-model="ruleForm.atributo" class="input-field">
+                                <option value="" disabled>Seleccione Atributo...</option>
+                                <option v-for="opt in attributeOptions" :key="opt.value" :value="opt.value">
+                                    {{ opt.label }}
+                                </option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" style="width: 120px;">
+                            <select v-model="ruleForm.operador" class="input-field">
+                                <option value="=">Igual (=)</option>
+                                <option value=">">Mayor (>)</option>
+                                <option value="<">Menor (<)</option>
+                                <option value=">=">Mayor o Igual (>=)</option>
+                                <option value="<=">Menor o Igual (<=)</option>
+                                <option value="<>">Diferente (<>)</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group flex-grow">
+                            <input v-model="ruleForm.valor" placeholder="Valor (Ej: 18, Soltero, Caracas)" class="input-field">
+                        </div>
+
+                        <div class="form-group btn-container">
+                            <button class="btn-add" @click="saveRule">{{ isEditingRule ? 'Actualizar' : 'Crear' }}</button>
+                            <button v-if="isEditingRule" class="btn-secondary small" @click="cancelEditRule">Cancelar</button>
+                        </div>
+                    </div>
+
+                    <div v-if="ruleForm.atributo" class="hint-text">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <span v-if="ruleForm.atributo === 'viajero_edad'"> Validará la edad numérica del viajero principal.</span>
+                        <span v-else-if="ruleForm.atributo === 'usuario_millas'"> Validará el saldo de millas del usuario comprador.</span>
+                        <span v-else-if="ruleForm.atributo === 'viajero_estado_civil'"> Validará el estado civil actual (Ej: Soltero, Casado).</span>
+                        <span v-else> Escriba el valor exacto con el que desea comparar.</span>
+                    </div>
+                </div>
+
+                <div class="table-card mt-2">
+                    <table class="styled-table">
+                        <thead>
+                            <tr>
+                                <th>Atributo</th>
+                                <th>Condición</th>
+                                <th>Valor</th>
+                                <th class="text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="r in listRules" :key="r.reg_paq_codigo">
+                                <td>
+                                    <span class="badge-attr">
+                                        {{ attributeOptions.find(o => o.value === r.reg_paq_atributo)?.label || r.reg_paq_atributo }}
+                                    </span>
+                                </td>
+                                <td class="text-center font-bold">{{ r.reg_paq_operador }}</td>
+                                <td>{{ r.reg_paq_valor }}</td>
+                                <td class="text-center">
+                                    <div class="action-group">
+                                        <button class="action-btn btn-edit" @click="editRule(r)" title="Modificar">
+                                            <i class="fa-solid fa-pen"></i>
+                                        </button>
+                                        <button class="action-btn btn-delete" @click="deleteRuleDefinition(r.reg_paq_codigo)" title="Eliminar Definitivamente">
+                                            <i class="fa-solid fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr v-if="listRules.length === 0">
+                                <td colspan="4" class="empty-text">No hay reglas definidas en el sistema.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div v-if="showConfigModal" class="modal-backdrop" @click.self="showConfigModal=false">
       <div class="modal-window large slide-in">
         <div class="modal-header config-header">
@@ -117,23 +214,27 @@
             
             <div v-if="activeTab === 'reglas'">
                 <div class="assign-form">
-                    <label>Seleccionar Regla:</label>
+                    <label>Asignar Regla al Paquete:</label>
                     <div class="input-group">
                         <select v-model="selectedRuleId" class="input-field">
-                            <option value="" disabled>Seleccione...</option>
+                            <option value="" disabled>Seleccione Regla...</option>
                             <option v-for="r in listRules" :value="r.reg_paq_codigo">
-                                {{ r.reg_paq_atributo }} {{ r.reg_paq_operador }} {{ r.reg_paq_valor }}
+                                {{ attributeOptions.find(o => o.value === r.reg_paq_atributo)?.label || r.reg_paq_atributo }} 
+                                {{ r.reg_paq_operador }} {{ r.reg_paq_valor }}
                             </option>
                         </select>
                         <button class="btn-add" @click="assignItem('regla')">Asignar</button>
                     </div>
                 </div>
                 <div class="current-list">
-                    <h6>Reglas Activas:</h6>
+                    <h6>Reglas Activas en este Paquete:</h6>
                     <ul>
                         <li v-for="(item, i) in currentConfig.reglas" :key="i">
-                            <span>📜 {{ item.atributo }} {{ item.operador }} {{ item.valor }}</span>
-                            <button class="btn-remove" @click="deleteElement('regla', item)" title="Quitar">✕</button>
+                            <span>
+                                <span class="badge-attr-small">{{ item.atributo }}</span> 
+                                {{ item.operador }} {{ item.valor }}
+                            </span>
+                            <button class="btn-remove" @click="deleteElement('regla', item)" title="Quitar del Paquete">✕</button>
                         </li>
                     </ul>
                 </div>
@@ -307,30 +408,48 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 
+// --- CONFIGURACIÓN Y CONSTANTES ---
+// Lista de Atributos permitidos en BD para evitar errores de escritura
+const attributeOptions = [
+    { label: '🎂 Edad del Viajero', value: 'viajero_edad' },
+    { label: '🌟 Millas Acumuladas', value: 'usuario_millas' },
+    { label: '📍 Ubicación (Estado)', value: 'usuario_estado' },
+    { label: '🌍 Nacionalidad', value: 'viajero_nacionalidad' },
+    { label: '💍 Estado Civil', value: 'viajero_estado_civil' },
+    { label: '👥 Cantidad de Personas', value: 'reserva_cantidad' },
+    { label: '📅 Mes del Viaje', value: 'fecha_mes' }
+];
+
 // --- ESTADOS ---
 const packages = ref([]);
 const showModal = ref(false);
 const showConfigModal = ref(false);
 const showDetailModal = ref(false);
+const showRuleManager = ref(false); // Estado para el modal de reglas
 const isEditing = ref(false);
+const isEditingRule = ref(false); // Estado para edición de reglas
 const activeTab = ref('reglas');
 const selectedPackage = ref(null);
 const detailData = ref(null);
 const currentConfig = ref({});
 
+// Listas de catálogo
 const listRules = ref([]);
 const listGenericServices = ref([]);
 const listRooms = ref([]);
 const listRestaurants = ref([]);
 const listTransfers = ref([]);
 
+// Filtros y selecciones
 const searchTransfer = ref('');
 const selectedRuleId = ref('');
 const selectedServiceId = ref('');
 const serviceQty = ref(1);
 const selectedTransferId = ref('');
 
+// Formularios
 const form = reactive({ id: null, nombre: '', descripcion: '', monto_total: 0, monto_subtotal: 0, costo_millas: 0 });
+const ruleForm = reactive({ id: null, atributo: '', operador: '=', valor: '' }); // Formulario para crear/editar regla
 const roomForm = reactive({ id_habitacion: '', fecha_inicio: '', fecha_fin: '' });
 const restForm = reactive({ id_restaurante: '', fecha: '', num_mesa: '', tamano_mesa: '' });
 
@@ -345,7 +464,7 @@ const filteredTransfers = computed(() => {
     );
 });
 
-// --- FETCHING ---
+// --- FETCHING API ---
 const fetchPackages = async () => {
     try {
         const res = await fetch('http://localhost:3000/api/paquetes');
@@ -356,18 +475,24 @@ const fetchPackages = async () => {
 
 const loadCatalogs = async () => {
     try {
-        const [r1, r2, r3, r4, r5] = await Promise.all([
-            fetch('http://localhost:3000/api/reglas').then(r => r.json()),
-            fetch('http://localhost:3000/api/opciones/servicios').then(r => r.json()),
-            fetch('http://localhost:3000/api/opciones/habitaciones').then(r => r.json()),
-            fetch('http://localhost:3000/api/opciones/restaurantes').then(r => r.json()),
-            fetch('http://localhost:3000/api/traslados-disponibles').then(r => r.json())
-        ]);
-        if(r1.success) listRules.value = r1.data;
-        if(r2.success) listGenericServices.value = r2.data;
-        if(r3.success) listRooms.value = r3.data;
-        if(r4.success) listRestaurants.value = r4.data;
-        if(r5.success) listTransfers.value = r5.data; 
+        // Cargar Reglas (siempre necesario para el manager y config)
+        fetch('http://localhost:3000/api/reglas')
+            .then(r => r.json())
+            .then(d => { if(d.success) listRules.value = d.data; });
+
+        // Cargar lo demás solo si estamos en config de paquete
+        if (showConfigModal.value) {
+            const [r2, r3, r4, r5] = await Promise.all([
+                fetch('http://localhost:3000/api/opciones/servicios').then(r => r.json()),
+                fetch('http://localhost:3000/api/opciones/habitaciones').then(r => r.json()),
+                fetch('http://localhost:3000/api/opciones/restaurantes').then(r => r.json()),
+                fetch('http://localhost:3000/api/traslados-disponibles').then(r => r.json())
+            ]);
+            if(r2.success) listGenericServices.value = r2.data;
+            if(r3.success) listRooms.value = r3.data;
+            if(r4.success) listRestaurants.value = r4.data;
+            if(r5.success) listTransfers.value = r5.data; 
+        }
     } catch(e) { console.error(e); }
 };
 
@@ -379,11 +504,73 @@ const refreshConfigData = async (id) => {
     } catch(e) { console.error(e); }
 };
 
-// --- ELIMINAR ELEMENTOS ---
+// --- CRUD DE REGLAS (GESTOR) ---
+const openRuleManager = () => {
+    loadCatalogs(); 
+    isEditingRule.value = false;
+    Object.assign(ruleForm, { id: null, atributo: '', operador: '=', valor: '' });
+    showRuleManager.value = true;
+};
+
+const saveRule = async () => {
+    if(!ruleForm.atributo || !ruleForm.valor) return alert("Complete los campos");
+    
+    const url = isEditingRule.value 
+        ? `http://localhost:3000/api/reglas/${ruleForm.id}` 
+        : 'http://localhost:3000/api/reglas';
+    
+    const method = isEditingRule.value ? 'PUT' : 'POST';
+
+    try {
+        const res = await fetch(url, {
+            method: method,
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(ruleForm)
+        });
+        const data = await res.json();
+        if(data.success) {
+            alert(isEditingRule.value ? 'Regla actualizada' : 'Regla creada');
+            loadCatalogs(); // Recargar lista
+            cancelEditRule();
+        } else {
+            alert(data.message);
+        }
+    } catch(e) { console.error(e); }
+};
+
+const editRule = (rule) => {
+    isEditingRule.value = true;
+    Object.assign(ruleForm, { 
+        id: rule.reg_paq_codigo, 
+        atributo: rule.reg_paq_atributo, 
+        operador: rule.reg_paq_operador, 
+        valor: rule.reg_paq_valor 
+    });
+};
+
+const deleteRuleDefinition = async (id) => {
+    if(!confirm('¿Eliminar definición de regla? Si está en uso por algún paquete, fallará.')) return;
+    try {
+        const res = await fetch(`http://localhost:3000/api/reglas/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if(data.success) {
+            loadCatalogs();
+        } else {
+            alert(data.message);
+        }
+    } catch(e) { console.error(e); }
+};
+
+const cancelEditRule = () => {
+    isEditingRule.value = false;
+    Object.assign(ruleForm, { id: null, atributo: '', operador: '=', valor: '' });
+};
+
+// --- GESTIÓN DE PAQUETES Y CONTENIDO ---
+
 const deleteElement = async (type, item) => {
     if(!confirm('¿Quitar este elemento del paquete?')) return;
     
-    // Mapeo seguro de IDs según la respuesta del SP actualizado
     let idElemento = null;
     let fecha = null;
     let extra = null;
@@ -415,7 +602,6 @@ const deleteElement = async (type, item) => {
     } catch(e) { console.error(e); }
 };
 
-// --- ASIGNAR Y CRUD ---
 const assignItem = async (type) => {
     let url = '', payload = {};
     const pkgId = selectedPackage.value.paq_tur_codigo;
@@ -456,17 +642,11 @@ const savePackage = async () => {
     } catch(e) { console.error(e); }
 };
 
-// --- FUNCIONES RESTAURADAS ---
-
 const saveRoomReservation = async () => {
-    // Validamos que haya datos seleccionados
     if(!roomForm.id_habitacion || !roomForm.fecha_inicio || !roomForm.fecha_fin) {
         return alert("Por favor complete los datos de la reserva (Habitación y Fechas).");
     }
-
-    // Buscamos el costo de la habitación seleccionada en la lista local para enviarlo al backend
     const room = listRooms.value.find(r => r.id === roomForm.id_habitacion);
-
     try {
         const res = await fetch('http://localhost:3000/api/reservar/habitacion', {
             method: 'POST', 
@@ -480,25 +660,18 @@ const saveRoomReservation = async () => {
             })
         });
         const data = await res.json();
-        
         if(data.success) { 
             alert("Alojamiento reservado exitosamente"); 
-            // Recargamos la lista de configuración para que aparezca el nuevo item
             await refreshConfigData(selectedPackage.value.paq_tur_codigo); 
-            // Opcional: Limpiar el form
             Object.assign(roomForm, { id_habitacion: '', fecha_inicio: '', fecha_fin: '' });
-        } else {
-            alert(data.message);
-        }
+        } else { alert(data.message); }
     } catch(e) { console.error(e); }
 };
 
 const saveRestReservation = async () => {
-    // Validamos datos mínimos
     if(!restForm.id_restaurante || !restForm.fecha) {
         return alert("Faltan datos obligatorios (Restaurante y Fecha).");
     }
-
     try {
         const res = await fetch('http://localhost:3000/api/reservar/restaurante', {
             method: 'POST', 
@@ -507,45 +680,31 @@ const saveRestReservation = async () => {
                 id_paquete: selectedPackage.value.paq_tur_codigo,
                 id_restaurante: restForm.id_restaurante,
                 fecha: restForm.fecha,
-                num_mesa: restForm.num_mesa || 1, // Default a 1 si está vacío
-                tamano_mesa: restForm.tamano_mesa || 2 // Default a 2 personas
+                num_mesa: restForm.num_mesa || 1, 
+                tamano_mesa: restForm.tamano_mesa || 2
             })
         });
         const data = await res.json();
-        
         if(data.success) { 
             alert("Mesa reservada exitosamente"); 
             await refreshConfigData(selectedPackage.value.paq_tur_codigo);
-            // Opcional: Limpiar el form
             Object.assign(restForm, { id_restaurante: '', fecha: '', num_mesa: '', tamano_mesa: '' });
-        } else {
-            alert(data.message);
-        }
+        } else { alert(data.message); }
     } catch(e) { console.error(e); }
 };
 
 const deletePackage = async (id) => {
-    if(!confirm('¿Estás seguro de eliminar este paquete permanentemente? Esta acción borrará todas sus configuraciones.')) return;
-    
+    if(!confirm('¿Estás seguro de eliminar este paquete permanentemente?')) return;
     try {
-        const res = await fetch(`http://localhost:3000/api/paquetes/${id}`, { 
-            method: 'DELETE' 
-        });
+        const res = await fetch(`http://localhost:3000/api/paquetes/${id}`, { method: 'DELETE' });
         const data = await res.json();
-        
-        if(data.success) { 
-            alert('Paquete eliminado correctamente'); 
-            fetchPackages(); // Recargar la tabla principal
-        } else {
-            alert('Error al eliminar: ' + data.message);
-        }
+        if(data.success) { alert('Paquete eliminado'); fetchPackages(); } 
+        else { alert('Error: ' + data.message); }
     } catch(e) { console.error(e); }
 };
 
-// --- MODALES ---
 const openDetailsModal = async (id) => {
-    detailData.value = null; 
-    showDetailModal.value = true;
+    detailData.value = null; showDetailModal.value = true;
     try {
         const res = await fetch(`http://localhost:3000/api/paquetes/${id}/detalles`);
         const data = await res.json();
@@ -555,36 +714,28 @@ const openDetailsModal = async (id) => {
 
 const openCreateModal = () => { isEditing.value=false; Object.assign(form, {nombre:'', descripcion:'', monto_total:0, monto_subtotal:0, costo_millas:0}); showModal.value=true; };
 const openEditModal = (p) => { isEditing.value=true; Object.assign(form, {id:p.paq_tur_codigo, nombre:p.paq_tur_nombre, descripcion:p.paq_tur_descripcion, monto_total:p.paq_tur_monto_total, monto_subtotal:p.paq_tur_monto_subtotal, costo_millas:p.paq_tur_costo_en_millas}); showModal.value=true; };
-const openConfigModal = (p) => { selectedPackage.value=p; loadCatalogs(); refreshConfigData(p.paq_tur_codigo); showConfigModal.value=true; };
+const openConfigModal = (p) => { 
+    selectedPackage.value=p; 
+    showConfigModal.value=true;
+    // Cargar catálogos solo al abrir configuración
+    loadCatalogs(); 
+    refreshConfigData(p.paq_tur_codigo); 
+};
 
 onMounted(() => fetchPackages());
 </script>
 
 <style scoped>
-/* GENERAL */
-.container-fluid {
-    padding: 30px;
-    background-color: #f8fafc;
-    min-height: 100vh;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-.header-actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 25px;
-}
+/* ESTILOS GENERALES */
+.container-fluid { padding: 30px; background-color: #f8fafc; min-height: 100vh; font-family: 'Segoe UI', sans-serif; }
+.header-actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
 .header-actions h2 { color: #1e293b; margin: 0; font-weight: 700; }
 .subtitle { color: #64748b; margin: 0; font-size: 0.9rem; }
 
+.btn-group-header { display: flex; gap: 10px; }
+
 /* TABLA */
-.table-card {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-}
+.table-card { background: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); overflow: hidden; }
 .styled-table { width: 100%; border-collapse: collapse; }
 .styled-table th { background: #f1f5f9; color: #475569; padding: 16px; font-size: 0.85rem; text-transform: uppercase; font-weight: 600; text-align: left; }
 .styled-table td { padding: 16px; border-bottom: 1px solid #e2e8f0; color: #334155; }
@@ -596,40 +747,19 @@ onMounted(() => fetchPackages());
 /* BOTONES */
 .btn-main { background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; gap: 8px; align-items: center; }
 .btn-main:hover { background: #1d4ed8; }
-.btn-secondary { background: #e2e8f0; color: #475569; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+.btn-secondary { background: #e2e8f0; color: #475569; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+.btn-secondary:hover { background: #cbd5e1; }
+.small { padding: 0 15px; height: 38px; }
+
 .action-group { display: flex; gap: 5px; justify-content: center; }
 .action-btn { width: 32px; height: 32px; border: none; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; color: #475569; background: transparent; }
 .action-btn:hover { background: #f1f5f9; color: #2563eb; }
 .btn-delete:hover { color: #dc2626; background: #fee2e2; }
 
-/* MODALES (FIXED OVERLAY) */
-.modal-backdrop {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background-color: rgba(15, 23, 42, 0.6);
-    backdrop-filter: blur(4px);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-}
-
-.modal-window {
-    background: white;
-    border-radius: 16px;
-    width: 95%;
-    max-width: 500px;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-    display: flex;
-    flex-direction: column;
-    max-height: 90vh;
-    animation: slideUp 0.3s ease-out;
-}
+/* MODALES */
+.modal-backdrop { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+.modal-window { background: white; border-radius: 16px; width: 95%; max-width: 500px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); display: flex; flex-direction: column; max-height: 90vh; animation: slideUp 0.3s ease-out; }
 .modal-window.large { max-width: 850px; }
-
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
 .modal-header { padding: 20px 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
@@ -638,31 +768,7 @@ onMounted(() => fetchPackages());
 .modal-body { padding: 24px; overflow-y: auto; }
 .modal-footer { padding: 20px 24px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 10px; background: #f8fafc; border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
 
-/* TABS CONFIGURACIÓN */
-.tabs-header { display: flex; padding: 0 24px; border-bottom: 1px solid #e2e8f0; gap: 20px; overflow-x: auto; }
-.tabs-header button {
-    background: none; border: none; padding: 16px 0; color: #64748b; font-weight: 600; cursor: pointer; 
-    border-bottom: 2px solid transparent; white-space: nowrap; display: flex; gap: 8px; align-items: center;
-}
-.tabs-header button:hover { color: #3b82f6; }
-.tabs-header button.active { color: #2563eb; border-bottom-color: #2563eb; }
-
-/* FORMULARIOS CONFIG */
-.assign-form { background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; }
-.current-list { margin-top: 10px; }
-.current-list h6 { margin: 0 0 10px 0; color: #475569; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px; }
-.current-list ul { list-style: none; padding: 0; margin: 0; }
-.current-list li {
-    background: white; border: 1px solid #e2e8f0; padding: 10px 12px; margin-bottom: 8px; border-radius: 6px;
-    display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: #334155;
-}
-.btn-remove {
-    width: 24px; height: 24px; border-radius: 50%; border: 1px solid #fecaca; background: #fef2f2; color: #dc2626; 
-    cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; transition: 0.2s;
-}
-.btn-remove:hover { background: #dc2626; color: white; }
-
-/* INPUTS */
+/* FORMULARIOS */
 .form-group { margin-bottom: 15px; }
 .form-group label { display: block; margin-bottom: 6px; font-weight: 600; color: #475569; font-size: 0.85rem; }
 .input-field { width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; background: white; transition: border 0.2s; }
@@ -670,18 +776,36 @@ onMounted(() => fetchPackages());
 .row-inputs { display: flex; gap: 15px; }
 .row-inputs .form-group { flex: 1; }
 .input-group { display: flex; gap: 10px; }
-.input-group-row { display: flex; gap: 10px; }
+.input-group-row { display: flex; gap: 10px; align-items: flex-end; }
 .flex-grow { flex: 1; }
 .qty-input { width: 80px; }
 .search-box { margin-bottom: 10px; border-color: #93c5fd; background: #eff6ff; }
 
-.btn-add { background: #10b981; color: white; border: none; padding: 0 15px; border-radius: 6px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn-add { background: #10b981; color: white; border: none; padding: 0 15px; height: 38px; border-radius: 6px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn-add:hover { background: #059669; }
-.full-width { width: 100%; padding: 12px; }
-.mb-2 { margin-bottom: 10px; }
-.mt-2 { margin-top: 10px; }
+.btn-container { display: flex; gap: 5px; }
 
-/* DETALLES */
+/* TABS */
+.tabs-header { display: flex; padding: 0 24px; border-bottom: 1px solid #e2e8f0; gap: 20px; overflow-x: auto; }
+.tabs-header button { background: none; border: none; padding: 16px 0; color: #64748b; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; display: flex; gap: 8px; align-items: center; }
+.tabs-header button:hover { color: #3b82f6; }
+.tabs-header button.active { color: #2563eb; border-bottom-color: #2563eb; }
+
+/* LISTAS INTERNAS */
+.assign-form { background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; }
+.current-list { margin-top: 10px; }
+.current-list h6 { margin: 0 0 10px 0; color: #475569; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px; }
+.current-list ul { list-style: none; padding: 0; margin: 0; }
+.current-list li { background: white; border: 1px solid #e2e8f0; padding: 10px 12px; margin-bottom: 8px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: #334155; }
+.btn-remove { width: 24px; height: 24px; border-radius: 50%; border: 1px solid #fecaca; background: #fef2f2; color: #dc2626; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; transition: 0.2s; }
+.btn-remove:hover { background: #dc2626; color: white; }
+
+/* BADGES Y ETIQUETAS */
+.badge-attr { background-color: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 4px; font-weight: 600; font-size: 0.85rem; }
+.badge-attr-small { background-color: #f1f5f9; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.75rem; margin-right: 5px; text-transform: uppercase; }
+.hint-text { margin-top: 8px; color: #64748b; font-size: 0.85rem; font-style: italic; display: flex; gap: 5px; align-items: center; }
+
+/* DETALLES VISUALES */
 .detail-summary { text-align: center; margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; }
 .detail-title { margin: 0 0 5px 0; color: #0f172a; font-size: 1.5rem; }
 .badges-row { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }

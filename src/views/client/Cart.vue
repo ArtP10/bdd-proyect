@@ -73,6 +73,10 @@
             <option value="servicio">Servicios / Actividades</option>
             <option value="traslado">Traslados / Vuelos</option>
             <option value="paquete">Paquetes Turísticos</option>
+            <!-- OPCION DE WISHLIST PARA EL ITINERARIO -->
+             <!--MELANIE -->
+            <option value="wishlist">⭐ Mi Lista de Deseos</option>
+            <!--------------------------->
           </select>
           
           <select v-model="selectedProduct" class="form-control product-select">
@@ -418,43 +422,76 @@ const toggleTraveler = (id) => {
     }
 };
 
+
+// --- PASO 2: CARGA DINÁMICA DE PRODUCTOS ---
+//--- CAMBIO DEL SELECT PARA QUE APAREZCA WISHLIST ---
+//--- MELA ---// 
 watch(selectedProductType, async (val) => {
     selectedProduct.value = null;
     availableProducts.value = [];
     let url = '';
+    let options = { method: 'GET' };
+
+    // Determinamos la URL
     if(val === 'servicio') url = 'http://localhost:3000/api/opciones/servicios'; 
     else if(val === 'traslado') url = 'http://localhost:3000/api/traslados-disponibles'; 
     else if(val === 'paquete') url = 'http://localhost:3000/api/paquetes';
+    else if(val === 'wishlist') url = 'http://localhost:3000/api/cart/wishlist-items'; // Ruta de la compañera
 
     try {
-        const res = await fetch(url);
+        const res = await fetch(url, options);
         const data = await res.json();
         if(data.success) {
             availableProducts.value = data.data.map(item => ({
                 ...item,
-                nombre: item.nombre || item.descripcion || item.paq_tur_nombre, 
-                precio: item.costo || item.precio || item.paq_tur_monto_total,
-                millas: item.millas || item.ser_millas_otorgadas || item.rut_millas_otorgadas || 0
+                // Fusión: Normalización de datos (Lista_Deseos) + Millas (Main)
+                
+                // 1. ID Unificado: Vital para que el v-model y las validaciones funcionen igual para todo
+                id: item.id_original || item.id || item.ser_codigo || item.tras_codigo || item.paq_tur_codigo,
+                
+                // 2. Nombre y Precio unificados
+                nombre: item.nombre || item.descripcion || item.paq_tur_nombre,
+                precio: parseFloat(item.precio || item.costo || item.paq_tur_monto_total || 0),
+                
+                // 3. Tipo Real: Si viene de wishlist, el item ya trae su tipo ('servicio', 'paquete').
+                // Si es búsqueda normal, usamos el valor del select (val).
+                tipo: item.tipo || val,
+
+                // 4. Millas (De tu rama Main): Aseguramos que no se pierda este beneficio
+                millas: parseInt(item.millas || item.ser_millas_otorgadas || item.rut_millas_otorgadas || 0)
             }));
         }
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error("Error cargando productos:", e); }
 });
-
+//--------------------------------------------------------------
+//Asegurar que el icono se asigne correctamente según el tipo real del producto (especialmente si viene de la wishlist)
 const addItemToCart = () => {
     if(!selectedProduct.value) return;
-    const productId = selectedProduct.value.id || selectedProduct.value.ser_codigo || selectedProduct.value.tras_codigo || selectedProduct.value.paq_tur_codigo;
+    
+    // Obtenemos el tipo real del objeto (crucial para wishlist que mezcla cosas)
+    const tipoReal = selectedProduct.value.tipo;
+    const productId = selectedProduct.value.id;
+
+    // Validación de duplicados (Lógica de Main mejorada con IDs normalizados)
     const exists = cartItems.value.find(item => {
-        const itemId = item.id || item.ser_codigo || item.tras_codigo || item.paq_tur_codigo;
-        return itemId === productId && item.tipo === selectedProductType.value;
+        return item.id === productId && item.tipo === tipoReal;
     });
-    if (exists) { alert('Ya está en el carrito.'); return; }
-    cartItems.value.push({ 
-        ...selectedProduct.value, 
-        tipo: selectedProductType.value,
-        es_paquete: selectedProductType.value === 'paquete'
+
+    if (exists) { 
+        alert('Este ítem ya está en el carrito.'); 
+        return; 
+    }
+
+    // Agregar al carrito
+    cartItems.value.push({
+        ...selectedProduct.value,
+        tipo: tipoReal, // Usamos el tipo real, no el del select (por si es wishlist)
+        es_paquete: tipoReal === 'paquete' // Flag auxiliar para UI
     });
+    
     selectedProduct.value = null;
 };
+//----------
 
 const getIcon = (tipo) => {
     if(tipo === 'servicio') return 'fa-solid fa-ticket';

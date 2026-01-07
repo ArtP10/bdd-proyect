@@ -34,7 +34,7 @@
         <img src="https://cdn-icons-png.flaticon.com/512/6134/6134065.png" alt="No found" width="100">
         <h3>No encontramos resultados</h3>
         <p>Intenta cambiar las fechas o el destino.</p>
-        <button class="btn btn-primary" @click="$router.push('/')">Volver al inicio</button>
+        <button class="btn btn-primary" @click="$router.push('/home')">Volver al inicio</button>
       </div>
 
       <div v-else class="cards-list">

@@ -2099,8 +2099,21 @@ DECLARE
     v_millas_ruta INTEGER;
     v_millas_servicio INTEGER;
     v_millas_paquete INTEGER;
+    v_es_componente_paquete BOOLEAN := FALSE;
 BEGIN
-    -- 1. CAMBIO: Calcular millas si es Traslado (Usando fk_traslado)
+    -- 0. PREVENCIÓN: Si es un componente interno de un paquete (tiene fk_paquete Y (fk_traslado o fk_servicio)),
+    --    generalmente NO queremos dar millas dobles (por el paquete y por el vuelo).
+    --    Asumiremos que las millas se ganan por el PAQUETE completo, no por sus partes individuales.
+    IF NEW.fk_paquete_turistico IS NOT NULL AND (NEW.fk_traslado IS NOT NULL OR NEW.fk_servicio IS NOT NULL) THEN
+        v_es_componente_paquete := TRUE;
+    END IF;
+
+    -- Si es componente interno, salimos y no damos millas (ya las dará el header del paquete)
+    IF v_es_componente_paquete THEN
+        RETURN NEW;
+    END IF;
+
+    -- 1. Calcular millas si es Traslado INDIVIDUAL
     IF NEW.fk_traslado IS NOT NULL THEN
         SELECT r.rut_millas_otorgadas INTO v_millas_ruta
         FROM traslado t
@@ -2109,25 +2122,31 @@ BEGIN
         
         v_millas_ganadas := COALESCE(v_millas_ruta, 0);
     
-    -- 2. Calcular millas si es Servicio
+    -- 2. Calcular millas si es Servicio INDIVIDUAL
     ELSIF NEW.fk_servicio IS NOT NULL THEN
         SELECT ser_millas_otorgadas INTO v_millas_servicio
         FROM servicio WHERE ser_codigo = NEW.fk_servicio;
+        
         v_millas_ganadas := COALESCE(v_millas_servicio, 0);
 
-    -- 3. Calcular millas si es Paquete
+    -- 3. Calcular millas si es Paquete (HEADER)
     ELSIF NEW.fk_paquete_turistico IS NOT NULL THEN
         SELECT paq_tur_costo_en_millas INTO v_millas_paquete 
         FROM paquete_turistico WHERE paq_tur_codigo = NEW.fk_paquete_turistico;
+        
         v_millas_ganadas := COALESCE(v_millas_paquete, 0);
     END IF;
 
     -- 4. Actualizar Usuario y Registrar Historial
     IF v_millas_ganadas > 0 THEN
+        -- CRITICO: Usamos COALESCE(usu_total_millas, 0) para evitar que NULL + 100 = NULL
         UPDATE usuario 
-        SET usu_total_millas = usu_total_millas + v_millas_ganadas
+        SET usu_total_millas = COALESCE(usu_total_millas, 0) + v_millas_ganadas
         WHERE usu_codigo = (SELECT fk_usuario FROM compra WHERE com_codigo = NEW.fk_compra);
 
+        -- Insertamos en historial
+        -- Asegúrate de que esta estructura coincida con tu tabla 'milla' actual.
+        -- Si agregaste columnas nuevas (como mil_valor_restado), asegúrate que acepten NULL o tengan DEFAULT.
         INSERT INTO milla (mil_valor_obtenido, mil_fecha_inicio, fk_compra, fk_pago)
         VALUES (v_millas_ganadas, CURRENT_DATE, NEW.fk_compra, NULL); 
     END IF;
@@ -2136,13 +2155,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Recrear el Trigger (por si acaso se borró o desconectó)
+DROP TRIGGER IF EXISTS trg_otorgar_millas ON detalle_reserva;
 
-
-CREATE OR REPLACE TRIGGER trg_otorgar_millas
+CREATE TRIGGER trg_otorgar_millas
 AFTER INSERT ON detalle_reserva
 FOR EACH ROW
 EXECUTE FUNCTION fn_otorgar_millas_compra();
-
 -- ==============================================================================
 -- 3. STORED PROCEDURE MAESTRO: PROCESAR COMPRA (Checkout)
 -- ==============================================================================
@@ -2845,34 +2864,46 @@ CREATE OR REPLACE PROCEDURE sp_solicitar_reembolso(
 LANGUAGE plpgsql
 AS $$
 DECLARE
+    -- Variables Financieras
     v_total_viaje_usd NUMERIC;
     v_total_pagado_usd NUMERIC;
     v_penalizacion_usd NUMERIC;
     v_a_devolver_usd NUMERIC;
     
+    -- Variables de Pago
     v_last_pago RECORD;
     v_nuevo_pago_id INTEGER;
     v_nuevo_metodo_id INTEGER;
     v_metodo_descripcion TEXT;
     
+    -- Variables de Control
     v_estado_cancelado_id INTEGER;
     v_ya_paso BOOLEAN;
     v_paquete_iniciado BOOLEAN;
     
+    -- Variables de Conversión
     v_tasa_valor NUMERIC;
-    v_monto_final_registro NUMERIC; -- Monto a devolver en moneda local
-    v_retencion_final_registro NUMERIC; -- Penalización en moneda local
+    v_monto_final_registro NUMERIC; 
+    v_retencion_final_registro NUMERIC;
+    
+    -- VARIABLES PARA MILLAS
+    v_millas_ganadas INTEGER;
+    v_saldo_actual INTEGER;
+    v_usuario_id INTEGER;
 BEGIN
-    SELECT EXISTS (
-        SELECT 1 FROM detalle_reserva 
-        WHERE fk_compra = i_compra_id AND det_res_estado = 'Completada'
-    ) INTO v_ya_paso;
+    -- 1. OBTENER ID USUARIO (Necesario para validaciones)
+    SELECT fk_usuario INTO v_usuario_id FROM compra WHERE com_codigo = i_compra_id;
+    IF v_usuario_id IS NULL THEN o_status := 404; o_mensaje := 'Compra no encontrada'; RETURN; END IF;
 
-    IF v_ya_paso THEN 
-        o_status := 400; o_mensaje := 'No reembolsable: Uno o más tickets ya fueron utilizados.'; RETURN; 
-    END IF;
+    -- =================================================================================
+    -- VALIDACIONES PREVIAS (Bloquean el proceso antes de calcular dinero)
+    -- =================================================================================
 
-    -- B. VALIDAR FECHAS (Servicios y Traslados Individuales)
+    -- A. Ticket Usado
+    SELECT EXISTS (SELECT 1 FROM detalle_reserva WHERE fk_compra = i_compra_id AND det_res_estado = 'Completada') INTO v_ya_paso;
+    IF v_ya_paso THEN o_status := 400; o_mensaje := 'No reembolsable: Tickets ya utilizados.'; RETURN; END IF;
+
+    -- B. Fechas Vencidas (Servicios/Traslados)
     SELECT EXISTS (
         SELECT 1 FROM detalle_reserva dr
         LEFT JOIN servicio s ON dr.fk_servicio = s.ser_codigo
@@ -2880,94 +2911,80 @@ BEGIN
         WHERE dr.fk_compra = i_compra_id 
           AND (s.ser_fecha_hora_inicio < NOW() OR t.tras_fecha_hora_inicio < NOW())
     ) INTO v_ya_paso;
+    IF v_ya_paso THEN o_status := 400; o_mensaje := 'No reembolsable: Viaje ya iniciado.'; RETURN; END IF;
 
-    IF v_ya_paso THEN 
-        o_status := 400; o_mensaje := 'No reembolsable: El viaje incluye servicios ya iniciados.'; RETURN; 
-    END IF;
-
-    -- C. VALIDAR FECHAS (Paquetes Turísticos)
+    -- C. Fechas Vencidas (Paquetes)
     SELECT EXISTS (
-        SELECT 1 FROM detalle_reserva dr
-        JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
+        SELECT 1 FROM detalle_reserva dr JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
         WHERE dr.fk_compra = i_compra_id
           AND (
               EXISTS (SELECT 1 FROM paq_ser ps JOIN servicio s ON ps.fk_ser_codigo = s.ser_codigo WHERE ps.fk_paq_tur_codigo = pq.paq_tur_codigo AND s.ser_fecha_hora_inicio < NOW())
               OR
               EXISTS (SELECT 1 FROM paq_tras pt JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo WHERE pt.fk_paq_tur_codigo = pq.paq_tur_codigo AND t.tras_fecha_hora_inicio < NOW())
-              OR
-              EXISTS (SELECT 1 FROM reserva_de_habitacion rh WHERE rh.fk_paquete_turistico = pq.paq_tur_codigo AND rh.res_hab_fecha_hora_inicio < NOW())
-              OR
-              EXISTS (SELECT 1 FROM reserva_restaurante rr WHERE rr.fk_paquete_turistico = pq.paq_tur_codigo AND rr.res_rest_fecha_hora < NOW())
           )
     ) INTO v_paquete_iniciado;
+    IF v_paquete_iniciado THEN o_status := 400; o_mensaje := 'No reembolsable: Paquete ya iniciado.'; RETURN; END IF;
 
-    IF v_paquete_iniciado THEN 
-        o_status := 400; o_mensaje := 'No reembolsable: El paquete incluye actividades ya iniciadas.'; RETURN; 
+    -- D. VALIDAR SALDO DE MILLAS (NUEVO)
+    -- Verificamos si el usuario tiene suficientes millas para "devolver" las que ganó
+    SELECT COALESCE(SUM(mil_valor_obtenido), 0) INTO v_millas_ganadas
+    FROM milla 
+    WHERE fk_compra = i_compra_id; -- Sumamos lo que ganó originalmente con esta compra
+
+    IF v_millas_ganadas > 0 THEN
+        SELECT usu_total_millas INTO v_saldo_actual FROM usuario WHERE usu_codigo = v_usuario_id;
+        
+        IF v_saldo_actual < v_millas_ganadas THEN
+            o_status := 400; 
+            o_mensaje := 'No reembolsable: Ya has utilizado las millas ('|| v_millas_ganadas ||') generadas por esta compra.'; 
+            RETURN; -- Bloqueamos el reembolso aquí
+        END IF;
     END IF;
 
-    -- 2. CÁLCULOS FINANCIEROS (TODO EN USD PRIMERO)
+    -- =================================================================================
+    -- 2. CÁLCULOS FINANCIEROS
+    -- =================================================================================
     SELECT com_monto_total INTO v_total_viaje_usd FROM compra WHERE com_codigo = i_compra_id;
     
-    -- Sumar pagos normalizados a USD
     SELECT COALESCE(SUM(p.pag_monto / tc.tas_cam_tasa_valor), 0) 
     INTO v_total_pagado_usd 
     FROM pago p
     JOIN tasa_de_cambio tc ON p.fk_tasa_de_cambio = tc.tas_cam_codigo
     WHERE p.fk_compra = i_compra_id;
 
-    IF v_total_viaje_usd IS NULL THEN o_status := 404; o_mensaje := 'Compra no encontrada'; RETURN; END IF;
-
-    -- Penalización del 10% en USD
     v_penalizacion_usd := v_total_viaje_usd * 0.10;
-    
-    -- Monto a devolver en USD
     v_a_devolver_usd := v_total_pagado_usd - v_penalizacion_usd;
 
     IF v_a_devolver_usd < 0 THEN v_a_devolver_usd := 0; END IF;
 
-    -- 3. OBTENER DATOS DEL ÚLTIMO PAGO (PARA EL REBOTE)
+    -- 3. OBTENER DATOS PARA REBOTE
     SELECT * INTO v_last_pago FROM pago WHERE fk_compra = i_compra_id ORDER BY pag_fecha_hora DESC LIMIT 1;
     
     IF v_last_pago IS NULL THEN 
-        -- Cancelación sin pagos previos
+        -- Cancelación simple si no hubo pagos (Millas igual se reversan abajo si hubiese)
         UPDATE detalle_reserva SET det_res_estado = 'Cancelada' WHERE fk_compra = i_compra_id;
-        o_status := 200; o_mensaje := 'Cancelado sin reembolso (sin pagos).'; 
-        RETURN; 
-    END IF;
+        v_nuevo_pago_id := NULL; -- No hay pago negativo
+    ELSE
+        -- 4. CONVERSIÓN A MONEDA LOCAL
+        SELECT tas_cam_tasa_valor INTO v_tasa_valor FROM tasa_de_cambio WHERE tas_cam_codigo = v_last_pago.fk_tasa_de_cambio;
+        v_monto_final_registro := v_a_devolver_usd * v_tasa_valor;
+        v_retencion_final_registro := v_penalizacion_usd * v_tasa_valor;
 
-    -- 4. CONVERSIÓN A MONEDA LOCAL (CORREGIDO)
-    -- Obtenemos la tasa exacta que se usó en ese pago (o la vigente, aquí usamos la del pago para consistencia)
-    SELECT tas_cam_tasa_valor INTO v_tasa_valor 
-    FROM tasa_de_cambio WHERE tas_cam_codigo = v_last_pago.fk_tasa_de_cambio;
+        -- 5. REGISTRAR PAGO NEGATIVO
+        IF v_monto_final_registro > 0 THEN
+            SELECT ('Reembolso ref. Pago #' || v_last_pago.pag_codigo) INTO v_metodo_descripcion;
+            
+            INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo)
+            SELECT v_metodo_descripcion, fk_tipo_metodo FROM metodo_pago WHERE met_pag_codigo = v_last_pago.fk_metodo_pago
+            RETURNING met_pag_codigo INTO v_nuevo_metodo_id;
 
-    -- AQUI ESTABA EL ERROR ANTES: Ahora multiplicamos AMBOS valores por la tasa
-    v_monto_final_registro := v_a_devolver_usd * v_tasa_valor;     -- Devolución en BS/EUR
-    v_retencion_final_registro := v_penalizacion_usd * v_tasa_valor; -- Penalización en BS/EUR
+            INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago)
+            VALUES ((v_monto_final_registro * -1), NOW(), v_last_pago.pag_denominacion, i_compra_id, v_last_pago.fk_tasa_de_cambio, v_nuevo_metodo_id)
+            RETURNING pag_codigo INTO v_nuevo_pago_id;
 
-    -- 5. REGISTRAR PAGO NEGATIVO (REVERSO)
-    IF v_monto_final_registro > 0 THEN
-        SELECT ('Reembolso ref. Pago #' || v_last_pago.pag_codigo) INTO v_metodo_descripcion;
-        
-        INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo)
-        SELECT v_metodo_descripcion, fk_tipo_metodo FROM metodo_pago WHERE met_pag_codigo = v_last_pago.fk_metodo_pago
-        RETURNING met_pag_codigo INTO v_nuevo_metodo_id;
-
-        INSERT INTO pago (
-            pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago
-        )
-        VALUES (
-            (v_monto_final_registro * -1), -- Negativo en moneda local
-            NOW(), 
-            v_last_pago.pag_denominacion, 
-            i_compra_id, 
-            v_last_pago.fk_tasa_de_cambio, 
-            v_nuevo_metodo_id
-        )
-        RETURNING pag_codigo INTO v_nuevo_pago_id;
-
-        -- INSERTAR REEMBOLSO (Con los valores convertidos correctamente)
-        INSERT INTO reembolso (rem_monto_reembolsado, rem_monto_retenido, rem_fecha, fk_pago)
-        VALUES (v_monto_final_registro, v_retencion_final_registro, CURRENT_DATE, v_nuevo_pago_id);
+            INSERT INTO reembolso (rem_monto_reembolsado, rem_monto_retenido, rem_fecha, fk_pago)
+            VALUES (v_monto_final_registro, v_retencion_final_registro, CURRENT_DATE, v_nuevo_pago_id);
+        END IF;
     END IF;
 
     -- 6. GESTIÓN DE ESTADOS (CANCELACIÓN)
@@ -2985,9 +3002,37 @@ BEGIN
     WHERE pf.fk_compra = i_compra_id
       AND NOT EXISTS (SELECT 1 FROM cuo_est x JOIN estado e ON x.fk_est_codigo = e.est_codigo WHERE x.fk_cuo_codigo = c.cuo_codigo AND e.est_nombre = 'Pagado');
 
+    -- =================================================================================
+    -- 7. REVERSIÓN DE MILLAS (EJECUCIÓN)
+    -- =================================================================================
+    IF v_millas_ganadas > 0 THEN
+        -- A. Restar del saldo del usuario
+        UPDATE usuario 
+        SET usu_total_millas = usu_total_millas - v_millas_ganadas
+        WHERE usu_codigo = v_usuario_id;
+
+        -- B. Registrar Egreso en tabla 'milla' con la nueva estructura
+        INSERT INTO milla (
+            mil_valor_obtenido, 
+            mil_fecha_inicio, 
+            mil_fecha_fin,
+            mil_valor_restado,  -- Columna correcta para egresos
+            fk_compra,          -- NULO según requerimiento
+            fk_pago             -- Vinculado al pago de reembolso (si existe)
+        )
+        VALUES (
+            NULL, 
+            CURRENT_DATE, 
+            NULL,
+            v_millas_ganadas, 
+            NULL, 
+            v_nuevo_pago_id
+        );
+    END IF;
+
     o_monto_reembolsado := v_monto_final_registro;
     o_status := 200;
-    o_mensaje := 'Reembolso procesado correctamente en ' || v_last_pago.pag_denominacion;
+    o_mensaje := 'Reembolso procesado. Millas descontadas: ' || COALESCE(v_millas_ganadas, 0);
 
 EXCEPTION WHEN OTHERS THEN
     o_status := 500; o_mensaje := 'Error CRITICO: ' || SQLERRM;

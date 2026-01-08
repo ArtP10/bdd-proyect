@@ -5,7 +5,7 @@
         <div class="logo-area" @click="$router.push('/')">
           <i class="fa-solid fa-paper-plane"></i> Viajes UCAB
         </div>
-        
+
         <div class="search-summary">
           <div class="summary-pill">
             <i class="fa-solid fa-location-dot"></i>
@@ -20,7 +20,7 @@
     </header>
 
     <div class="container main-layout">
-      
+
       <div class="results-top-bar">
         <h2>Resultados para {{ route.query.destino || 'tu búsqueda' }}</h2>
         <span class="count-badge">{{ results.length }} opciones encontradas</span>
@@ -39,17 +39,20 @@
 
       <div v-else class="cards-list">
         <div v-for="item in results" :key="item.id + item.categoria" class="result-card">
-          
+
           <div class="card-left">
             <div class="img-placeholder">
               <i :class="getIconClass(item.subtipo)"></i>
             </div>
           </div>
 
-          <div class="card-center">
+          <div class="card-center"style="position: relative;">
             <div class="card-tag">{{ item.subtipo || item.categoria }}</div>
             <h3 class="card-title">{{ item.titulo }}</h3>
-            
+            <button class="wishlist-btn-overlay" @click.stop="toggleWishlist(item)" title="Añadir a deseos">
+              <i class="fa-regular fa-heart"></i>
+            </button>
+
             <div class="route-info">
               <p class="location-detail">{{ item.detalle_lugar }}</p>
             </div>
@@ -85,7 +88,7 @@
     <div v-if="showLoginModal" class="modal-overlay">
       <div class="modal-content">
         <div class="modal-icon">
-            <i class="fa-solid fa-user-lock"></i>
+          <i class="fa-solid fa-user-lock"></i>
         </div>
         <h3>Acceso Requerido</h3>
         <p>Inicie sesión como cliente para comenzar a agregar cosas a su carrito.</p>
@@ -108,8 +111,14 @@ const router = useRouter(); // Instanciar router
 const results = ref([]);
 const loading = ref(true);
 const showLoginModal = ref(false);
+//PARA EL WISHLIST BY MELANIE
+const userId = ref(null); // Para guardar el ID del usuario logueado
 
 onMounted(async () => {
+  // Recuperar sesión para saber quién está navegando by MELANIE
+  const session = JSON.parse(localStorage.getItem('user_session'));
+  if (session) userId.value = session.user_id;
+
   await fetchResults();
 });
 
@@ -142,23 +151,23 @@ const fetchResults = async () => {
 
 // --- LÓGICA DE SELECCIÓN Y AUTENTICACIÓN ---
 const handleItemSelection = (item) => {
-    // Validar usuario cliente
-    const userRole = localStorage.getItem('userRole'); 
+  // Validar usuario cliente
+  const userRole = localStorage.getItem('userRole');
 
-    if (userRole === 'Cliente') {
-        router.push('/client/cart');
-    } else {
-        showLoginModal.value = true;
-    }
+  if (userRole === 'Cliente') {
+    router.push('/client/cart');
+  } else {
+    showLoginModal.value = true;
+  }
 };
 
 const closeModal = () => {
-    showLoginModal.value = false;
+  showLoginModal.value = false;
 };
 
 const goToLogin = () => {
-    showLoginModal.value = false;
-    router.push('/login');
+  showLoginModal.value = false;
+  router.push('/login');
 };
 // --------------------------------------------
 
@@ -185,6 +194,45 @@ const formatTime = (dateString) => {
   const d = new Date(dateString);
   return d.toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
 };
+
+// NUEVA FUNCIÓN: Guardar en lista de deseos by MELANIE
+const toggleWishlist = async (item) => {
+  const userRole = localStorage.getItem('userRole');
+
+  // 1. Validar si está logueado y es cliente
+  if (userRole !== 'Cliente' || !userId.value) {
+    showLoginModal.value = true;
+    return;
+  }
+
+  try {
+    // 2. Preparar los datos según lo que espera tu wishlistController.js
+    // Importante: 'categoria' en tus resultados debe ser 'SERVICIO' o 'TRASLADO'
+    const payload = {
+      user_id: userId.value,
+      producto_id: item.id,
+      tipo_producto: item.categoria.toUpperCase()
+    };
+
+    const response = await fetch('http://localhost:3000/api/wishlist/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      alert(`¡${item.titulo} guardado en tu lista de deseos!`);
+      // Opcional: Podrías cambiar el icono del corazón a sólido aquí
+    } else {
+      alert("Ya tienes este producto en tu lista.");
+    }
+  } catch (error) {
+    console.error("Error al guardar en wishlist:", error);
+    alert("No se pudo guardar en la lista de deseos.");
+  }
+};
 </script>
 
 <style scoped>
@@ -205,68 +253,269 @@ const formatTime = (dateString) => {
 
 .results-header {
   background: white;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
   padding: 1rem 0;
   margin-bottom: 2rem;
 }
 
-.header-content { display: flex; justify-content: space-between; align-items: center; }
-.logo-area { font-size: 1.4rem; font-weight: 800; color: #00BCD4; cursor: pointer; }
-.search-summary { display: flex; gap: 10px; }
-.summary-pill { background: #E0F7FA; color: #00838F; padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; }
+.header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 
-.results-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-.results-top-bar h2 { font-size: 1.5rem; color: #2c3e50; margin: 0; }
-.count-badge { color: #666; font-size: 0.9rem; }
+.logo-area {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #00BCD4;
+  cursor: pointer;
+}
 
-.cards-list { display: flex; flex-direction: column; gap: 20px; padding-bottom: 40px; }
+.search-summary {
+  display: flex;
+  gap: 10px;
+}
+
+.summary-pill {
+  background: #E0F7FA;
+  color: #00838F;
+  padding: 5px 15px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.results-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.results-top-bar h2 {
+  font-size: 1.5rem;
+  color: #2c3e50;
+  margin: 0;
+}
+
+.count-badge {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-bottom: 40px;
+}
+
 .result-card {
   background: white;
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   display: flex;
   padding: 20px;
   transition: transform 0.2s, box-shadow 0.2s;
   border: 1px solid transparent;
 }
-.result-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); border-color: #E0F7FA; }
 
-.card-left { width: 120px; display: flex; align-items: center; justify-content: center; border-right: 1px solid #f0f0f0; padding-right: 20px; margin-right: 20px; }
-.img-placeholder { width: 80px; height: 80px; background-color: #f5f5f5; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #E91E63; }
+.result-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  border-color: #E0F7FA;
+}
 
-.card-center { flex: 1; display: flex; flex-direction: column; justify-content: center; }
-.card-tag { display: inline-block; background: #FCE4EC; color: #C2185B; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; width: fit-content; margin-bottom: 5px; font-weight: 700; text-transform: uppercase; }
-.card-title { font-size: 1.2rem; font-weight: 700; margin: 0 0 5px 0; color: #333; }
-.location-detail { color: #666; font-size: 0.95rem; margin-bottom: 10px; }
-.time-info { display: flex; gap: 20px; }
-.time-block .label { display: block; font-size: 0.75rem; color: #999; text-transform: uppercase; }
-.time-block .value { font-weight: 600; color: #333; }
+.card-left {
+  width: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid #f0f0f0;
+  padding-right: 20px;
+  margin-right: 20px;
+}
 
-.card-right { width: 180px; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; padding-left: 20px; border-left: 1px solid #f0f0f0; }
-.price-container { text-align: right; }
-.currency { font-size: 0.9rem; font-weight: 600; color: #666; margin-right: 2px; }
-.amount { font-size: 1.8rem; font-weight: 800; color: #E91E63; }
-.actions { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.img-placeholder {
+  width: 80px;
+  height: 80px;
+  background-color: #f5f5f5;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  color: #E91E63;
+}
 
-.btn { padding: 8px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }
-.btn-block { width: 100%; }
-.btn-primary { background-color: #E91E63; color: white; }
-.btn-primary:hover { background-color: #D81B60; }
-.btn-outline { background-color: transparent; border: 1px solid #00BCD4; color: #00BCD4; }
-.btn-outline:hover { background-color: #E0F7FA; }
+.card-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 
-.loading-state, .no-results { text-align: center; padding: 4rem; color: #888; }
-.loading-state i { color: #00BCD4; margin-right: 10px; }
-.no-results button { margin-top: 1rem; }
+.card-tag {
+  display: inline-block;
+  background: #FCE4EC;
+  color: #C2185B;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  width: fit-content;
+  margin-bottom: 5px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.card-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  margin: 0 0 5px 0;
+  color: #333;
+}
+
+.location-detail {
+  color: #666;
+  font-size: 0.95rem;
+  margin-bottom: 10px;
+}
+
+.time-info {
+  display: flex;
+  gap: 20px;
+}
+
+.time-block .label {
+  display: block;
+  font-size: 0.75rem;
+  color: #999;
+  text-transform: uppercase;
+}
+
+.time-block .value {
+  font-weight: 600;
+  color: #333;
+}
+
+.card-right {
+  width: 180px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  padding-left: 20px;
+  border-left: 1px solid #f0f0f0;
+}
+
+.price-container {
+  text-align: right;
+}
+
+.currency {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #666;
+  margin-right: 2px;
+}
+
+.amount {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #E91E63;
+}
+
+.actions {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.9rem;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-primary {
+  background-color: #E91E63;
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #D81B60;
+}
+
+.btn-outline {
+  background-color: transparent;
+  border: 1px solid #00BCD4;
+  color: #00BCD4;
+}
+
+.btn-outline:hover {
+  background-color: #E0F7FA;
+}
+
+.loading-state,
+.no-results {
+  text-align: center;
+  padding: 4rem;
+  color: #888;
+}
+
+.loading-state i {
+  color: #00BCD4;
+  margin-right: 10px;
+}
+
+.no-results button {
+  margin-top: 1rem;
+}
 
 @media (max-width: 768px) {
-  .result-card { flex-direction: column; text-align: center; }
-  .card-left, .card-right { width: 100%; border: none; padding: 0; margin: 0; }
-  .card-left { margin-bottom: 15px; justify-content: center; }
-  .card-right { margin-top: 15px; align-items: center; }
-  .actions { margin-top: 10px; }
-  .time-info { justify-content: center; }
-  .card-tag { margin: 0 auto 5px auto; }
+  .result-card {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .card-left,
+  .card-right {
+    width: 100%;
+    border: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .card-left {
+    margin-bottom: 15px;
+    justify-content: center;
+  }
+
+  .card-right {
+    margin-top: 15px;
+    align-items: center;
+  }
+
+  .actions {
+    margin-top: 10px;
+  }
+
+  .time-info {
+    justify-content: center;
+  }
+
+  .card-tag {
+    margin: 0 auto 5px auto;
+  }
 }
 
 /* --- ESTILOS DEL MODAL --- */
@@ -291,19 +540,80 @@ const formatTime = (dateString) => {
   width: 90%;
   max-width: 400px;
   text-align: center;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
   animation: modalPop 0.3s ease-out;
 }
 
-.modal-icon { font-size: 3rem; color: #E91E63; margin-bottom: 1rem; }
-.modal-content h3 { margin: 0 0 0.5rem 0; color: #333; }
-.modal-content p { color: #666; margin-bottom: 2rem; line-height: 1.5; }
+.modal-icon {
+  font-size: 3rem;
+  color: #E91E63;
+  margin-bottom: 1rem;
+}
 
-.modal-actions { display: flex; gap: 10px; justify-content: center; }
-.modal-actions .btn { flex: 1; }
+.modal-content h3 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+}
+
+.modal-content p {
+  color: #666;
+  margin-bottom: 2rem;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.modal-actions .btn {
+  flex: 1;
+}
 
 @keyframes modalPop {
-    from { opacity: 0; transform: scale(0.9); }
-    to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Estilo para el botón de corazón sobre el icono by MELANIE */
+.img-placeholder {
+  position: relative;
+  /* Para posicionar el corazón adentro */
+}
+
+.wishlist-btn-overlay {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #E91E63;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  z-index: 10;
+}
+
+.wishlist-btn-overlay:hover {
+  transform: scale(1.1);
+  background: #FCE4EC;
+}
+
+.wishlist-btn-overlay i {
+  font-size: 1rem;
 }
 </style>

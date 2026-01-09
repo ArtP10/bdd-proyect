@@ -24,6 +24,9 @@
           <li :class="{ active: activeMenu === 'Paquetes' }">
             <a href="#" @click.prevent="activeMenu = 'Paquetes'">Paquetes Turísticos</a>
           </li>
+          <li :class="{ active: activeMenu === 'Reclamos' }">
+            <a href="#" @click.prevent="activeMenu = 'Reclamos'">Reclamos</a>
+          </li>
         </ul>
       </nav>
 
@@ -59,6 +62,10 @@
       <div v-if="activeMenu === 'Paquetes'">
         <AdminGestionPaquetes />
       </div>
+
+      <div v-if="activeMenu === 'Reclamos'">
+        <AdminClaims />
+      </div>
     </main>
   </div>
 </template>
@@ -72,7 +79,8 @@ import AdminGestionProveedor from './AdminGestionProveedor.vue';
 import Roles from './Roles.vue';
 import Promotions from './AdminGestionPromociones.vue';
 import AdminGestionPaquetes from './AdminGestionPaquetes.vue';
-import AdminReportes from './AdminReports.vue'; // <--- IMPORTADO
+import AdminReportes from './AdminReports.vue'; // <--- 
+import AdminClaims from './AdminClaims.vue'; // <---
 
 const router = useRouter();
 const activeMenu = ref('Reportes'); // Lo puse activo por defecto para que lo veas al entrar

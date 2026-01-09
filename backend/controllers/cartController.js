@@ -128,4 +128,34 @@ const markTicketUsed = async (req, res) => {
     }
 };
 
-module.exports = { processCheckout, getMyTickets, markTicketUsed };
+const getWishlistItemsForCart = async (req, res) => {
+    const { user_id } = req.body; 
+
+    try {
+        const result = await pool.query(
+            'SELECT * FROM mostrar_wishlist_filtrada($1, $2)', 
+            [user_id, 'TODO']
+        );
+
+        const items = result.rows.map(row => ({
+            id_original: row.codigo_producto,
+            nombre: row.nombre_producto,
+            
+            // Usamos el precio con descuento (precio_final)
+            precio: row.precio_final, 
+            
+            tipo: row.tipo_producto.toLowerCase(),
+            fecha_inicio: row.fecha_inicio,
+            
+            // CORRECCIÓN AQUÍ: Ahora leemos las millas que devuelve el SP
+            millas: row.millas || 0 
+        }));
+
+        res.json({ success: true, data: items });
+    } catch (err) {
+        console.error("Error fetching wishlist for cart:", err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+module.exports = { processCheckout, getMyTickets, markTicketUsed, getWishlistItemsForCart };

@@ -101,6 +101,9 @@
           <MyServices :user-id="userInfo.user_id" />
         </div>
 
+        <div v-else-if="activeMenuItem === 'Reseñas'"> <MyReviews :user-id="userInfo.user_id" />
+      </div>
+
         <div v-else class="profile-card empty-section">
           <i class="fa-solid fa-helmet-safety"></i>
           <p>La sección <strong>{{ activeMenuItem }}</strong> está en construcción.</p>

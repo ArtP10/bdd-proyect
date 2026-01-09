@@ -28,7 +28,12 @@ const getPackages = async (req, res) => {
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
-            const query = 'CALL sp_obtener_paquetes_turisticos(NULL, NULL, NULL)';
+            
+            // CORRECCIÓN: Enviamos 6 parámetros.
+            // Los primeros 3 son los filtros (NULL por ahora)
+            // Los últimos 3 son los de salida (cursor, status, mensaje)
+            const query = 'CALL sp_obtener_paquetes_turisticos(NULL, NULL, NULL, NULL, NULL, NULL)';
+            
             const result = await client.query(query);
             const response = result.rows[0];
             
@@ -46,7 +51,6 @@ const getPackages = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al obtener paquetes' }); 
     }
 };
-
 const updatePackage = async (req, res) => {
     const { id } = req.params;
     const { nombre, monto_total, monto_subtotal, costo_millas } = req.body;

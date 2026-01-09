@@ -115,7 +115,6 @@
 
     <div v-else class="main-content container">
 
-      <!--AGREGADO DE BOTON DE GUARDAR EN WISHLIST-->
       <section class="carousel-section">
         <div class="section-header">
           <h2><span class="highlight-text">¡No te lo pierdas!</span> Próximas salidas</h2>
@@ -139,6 +138,11 @@
             <div class="card-body">
               <h4>{{ item.titulo }}</h4>
               <p class="meta-date">{{ formatDate(item.fecha_inicio) }}</p>
+              
+              <div class="reviews-link" @click.stop="openReviewsModal(item)">
+                  <i class="fa-solid fa-star text-warning"></i> Ver reseñas
+              </div>
+
               <p class="sub-text"><i class="fa-solid fa-map-pin"></i> {{ item.ubicacion }}</p>
               <div class="price-row">
                 <span class="price-label">Desde</span>
@@ -151,7 +155,7 @@
           </div>
         </div>
       </section>
-      ---------
+      
       <section class="carousel-section bg-white-section">
         <div class="section-header">
           <h2><i class="fa-solid fa-route secondary-color"></i> Traslados Más Populares</h2>
@@ -162,7 +166,12 @@
               <i :class="getIconClass(t.tipo)"></i>
             </div>
             <div class="h-info-side">
-              <h4>{{ t.titulo }}</h4>
+              <div class="flex-between">
+                  <h4>{{ t.titulo }}</h4>
+                  <button class="btn-text-xs" @click.stop="openReviewsModal(t)">
+                      <i class="fa-solid fa-star text-warning"></i> Reseñas
+                  </button>
+              </div>
               <p class="desc-text">{{ t.descripcion }}</p>
               <div class="h-footer">
                 <span class="sales-badge"><i class="fa-solid fa-fire"></i> {{ t.total_ventas }} vendidos</span>
@@ -186,7 +195,12 @@
               <i class="fa-solid fa-camera"></i>
             </div>
             <div class="card-body">
-              <div class="category-pill">{{ s.subtipo }}</div>
+              <div class="flex-between">
+                  <div class="category-pill">{{ s.subtipo }}</div>
+                  <small class="clickable-review" @click.stop="openReviewsModal(s)">
+                      <i class="fa-solid fa-star text-warning"></i> Opiniones
+                  </small>
+              </div>
               <h4>{{ s.titulo }}</h4>
               <p class="location"><i class="fa-solid fa-location-arrow"></i> {{ s.lugar }}</p>
               <div class="card-footer">
@@ -214,12 +228,46 @@
       </div>
     </div>
 
+    <div v-if="showReviewsModal" class="modal-overlay" @click.self="closeReviewsModal">
+        <div class="modal-content reviews-modal">
+            <div class="modal-header-simple">
+                <h3>Reseñas de {{ selectedProductTitle }}</h3>
+                <button class="close-btn" @click="closeReviewsModal">✕</button>
+            </div>
+            
+            <div v-if="loadingReviews" class="loading-box">
+                <i class="fa-solid fa-spinner fa-spin"></i> Cargando opiniones...
+            </div>
+
+            <div v-else-if="productReviews.length === 0" class="empty-reviews">
+                <i class="fa-regular fa-comment-dots"></i>
+                <p>Este producto aún no tiene reseñas.</p>
+            </div>
+
+            <div v-else class="reviews-list">
+                <div v-for="(review, index) in productReviews" :key="index" class="review-item">
+                    <div class="review-top">
+                        <span class="author-name">{{ review.viajero_nombre || review.autor }}</span>
+                        <span class="review-date">{{ formatDate(review.fecha) }}</span>
+                    </div>
+                    <div class="star-row">
+                        <StarRating :modelValue="review.calificacion" :readonly="true" />
+                    </div>
+                    <p class="review-body">"{{ review.comentario }}"</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, reactive } from 'vue';
 import { useRouter } from 'vue-router';
+// IMPORTAR EL COMPONENTE DE ESTRELLAS
+import StarRating from '../components/common/StarRating.vue'; 
+
 const router = useRouter();
 
 const topTraslados = ref([]);
@@ -231,6 +279,12 @@ const isSearching = ref(false);
 // Variables de Estado
 const isLoggedIn = ref(false);
 const showLoginModal = ref(false);
+
+// NUEVAS VARIABLES PARA RESEÑAS
+const showReviewsModal = ref(false);
+const productReviews = ref([]);
+const loadingReviews = ref(false);
+const selectedProductTitle = ref('');
 
 const searchFilters = reactive({
   origen: '',
@@ -262,17 +316,61 @@ onMounted(async () => {
   }
 });
 
-// --- LÓGICA DE WISHLIST (NUEVA FUNCIÓN) ---
-const addToWishlist = async (item, tipo) => {
-  // Verificar si hay sesión
-  console.log("¿Cómo viene el item?", item);
+// --- LÓGICA DE RESEÑAS (NUEVA) ---
+const openReviewsModal = async (item) => {
+    selectedProductTitle.value = item.titulo;
+    showReviewsModal.value = true;
+    loadingReviews.value = true;
+    productReviews.value = [];
+
+    // Normalizar Tipo para la API
+    let type = 'SERVICIO';
+    if (item.tipo_recurso) type = item.tipo_recurso; 
+    else if (item.tipo) type = item.tipo; 
+    
+    type = type.toUpperCase();
+    if(type.includes('TRASLADO')) type = 'TRASLADO';
+    else if(type.includes('PAQUETE')) type = 'PAQUETE';
+    else type = 'SERVICIO';
+
+    try {
+        const res = await fetch(`http://localhost:3000/api/reviews/product/${type}/${item.id}`);
+        const data = await res.json();
+        if(data.success) {
+            productReviews.value = data.data;
+        }
+    } catch(e) {
+        console.error("Error cargando reseñas", e);
+    } finally {
+        loadingReviews.value = false;
+    }
+};
+
+const closeReviewsModal = () => {
+    showReviewsModal.value = false;
+};
+
+// --- LÓGICA DE WISHLIST ---
+const addToWishlist = async (item) => { 
   const sessionStr = localStorage.getItem('user_session');
   if (!sessionStr) {
     showLoginModal.value = true;
     return;
   }
-
   const session = JSON.parse(sessionStr);
+
+  let tipoReal = '';
+  
+  if (item.tipo_recurso) {
+      tipoReal = item.tipo_recurso;
+  } else if (item.tipo && (item.tipo === 'traslado' || item.tipo === 'servicio')) {
+      tipoReal = item.tipo;
+  } else if (item.precio && !item.tipo) {
+      if (topServicios.value.find(s => s.id === item.id)) tipoReal = 'SERVICIO';
+      else if (topTraslados.value.find(t => t.id === item.id)) tipoReal = 'TRASLADO';
+  }
+  
+  if(!tipoReal) tipoReal = 'SERVICIO'; 
 
   try {
     const response = await fetch('http://localhost:3000/api/wishlist/add', {
@@ -281,18 +379,15 @@ const addToWishlist = async (item, tipo) => {
       body: JSON.stringify({
         user_id: session.user_id,
         producto_id: item.id,
-        // Usamos el tipo que viene del objeto para que sea exacto
-        tipo_producto: item.tipo_recurso.toUpperCase()
+        tipo_producto: tipoReal.toUpperCase() 
       })
     });
-
-    // ... rest of the code
 
     const data = await response.json();
     if (data.success) {
       alert(`❤️ ${item.titulo || 'Recurso'} agregado a tu lista de deseos`);
     } else {
-      alert("Este producto ya está en tu lista de deseos");
+      alert(data.message || "No se pudo agregar a la lista de deseos");
     }
   } catch (error) {
     console.error("Error al guardar en wishlist:", error);
@@ -306,7 +401,7 @@ const goToDashboard = () => {
 };
 
 const goToCart = () => {
-  router.push('/cart');
+  router.push('/client/cart');
 };
 
 const handleItemSelection = (item) => {
@@ -649,6 +744,7 @@ const formatDate = (dateString) => {
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
 }
 
+/* VERTICAL CARD (Proximos) */
 .vertical-card {
   min-width: 260px;
   position: relative;
@@ -824,7 +920,7 @@ const formatDate = (dateString) => {
   display: block;
 }
 
-/* --- ESTILOS DEL MODAL --- */
+/* --- ESTILOS DEL MODAL LOGIN (Existente) --- */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -889,8 +985,7 @@ const formatDate = (dateString) => {
   }
 }
 
-/*ESTILOS ESPECÍFICOS DE WISHLIST AGREGADOS ---
-/* Contenedor para apilar verticalmente en la esquina */
+/*ESTILOS ESPECÍFICOS DE WISHLIST AGREGADOS --- */
 .top-right-actions {
   position: absolute;
   top: 10px;
@@ -898,13 +993,10 @@ const formatDate = (dateString) => {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  /* Alinea a la derecha */
   gap: 8px;
-  /* Espacio entre el tag y el corazón */
   z-index: 10;
 }
 
-/* Modificamos tu status-tag para que no sea absolute y fluya en el flex */
 .status-tag {
   position: static !important;
   background: #E91E63;
@@ -917,7 +1009,6 @@ const formatDate = (dateString) => {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-/* Estilo del botón circular del corazón */
 .wishlist-btn-overlay {
   background: white;
   border: none;
@@ -942,4 +1033,29 @@ const formatDate = (dateString) => {
 .wishlist-btn-overlay i {
   font-size: 1.1rem;
 }
+
+/* --- ESTILOS NUEVOS PARA RESEÑAS (AÑADIDOS SIN BORRAR NADA) --- */
+.text-warning { color: #fbbf24; margin-right: 4px; }
+.reviews-link { font-size: 0.8rem; color: #6b7280; cursor: pointer; margin-bottom: 8px; text-decoration: underline; }
+.reviews-link:hover { color: #3b82f6; }
+.btn-text-xs { font-size: 0.75rem; background: none; border: none; cursor: pointer; color: #6b7280; text-decoration: underline; }
+.btn-text-xs:hover { color: #3b82f6; }
+.flex-between { display: flex; justify-content: space-between; align-items: flex-start; }
+.clickable-review { font-size: 0.75rem; color: #6b7280; cursor: pointer; }
+.clickable-review:hover { color: #3b82f6; text-decoration: underline; }
+
+/* MODAL DE RESEÑAS */
+.reviews-modal { max-width: 500px; padding: 0; overflow: hidden; text-align: left; }
+.modal-header-simple { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+.modal-header-simple h3 { margin: 0; font-size: 1.1rem; color: #1f2937; }
+.close-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #9ca3af; }
+.loading-box, .empty-reviews { padding: 40px; text-align: center; color: #6b7280; }
+.empty-reviews i { font-size: 2rem; margin-bottom: 10px; display: block; }
+.reviews-list { padding: 20px; max-height: 400px; overflow-y: auto; text-align: left; }
+.review-item { margin-bottom: 15px; border-bottom: 1px solid #f0f0f0; padding-bottom: 15px; }
+.review-item:last-child { border-bottom: none; }
+.review-top { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.9rem; }
+.author-name { font-weight: 700; color: #374151; }
+.review-date { color: #9ca3af; font-size: 0.8rem; }
+.review-body { color: #4b5563; font-style: italic; margin-top: 5px; line-height: 1.4; }
 </style>

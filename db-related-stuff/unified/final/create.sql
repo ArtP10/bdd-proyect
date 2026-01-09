@@ -437,8 +437,8 @@ CREATE TABLE milla_pago(
 CREATE TABLE resena(
     res_codigo SERIAL PRIMARY KEY,
     res_calificacion_numerica INTEGER NOT NULL,
-    res_descripcion VARCHAR(200),
-    res_fecha_hota_creacion TIMESTAMP NOT NULL,
+    res_descripcion VARCHAR(400),
+    res_fecha_hora_creacion TIMESTAMP NOT NULL,
     fk_detalle_reserva INTEGER NOT NULL,
     fk_detalle_reserva_2 INTEGER NOT NULL,
     CONSTRAINT check_res_calificacion CHECK(res_calificacion_numerica >= 1 AND res_calificacion_numerica <= 5)
@@ -449,7 +449,10 @@ CREATE TABLE reclamo(
     rec_contenido VARCHAR(200) NOT NULL,
     rec_fecha_hora TIMESTAMP NOT NULL,
     fk_detalle_reserva INTEGER NOT NULL,
-    fk_detalle_reserva_2 INTEGER NOT NULL
+    fk_detalle_reserva_2 INTEGER NOT NULL,
+    rec_estado VARCHAR(10) DEFAULT 'Abierto',
+    rec_respuesta VARCHAR(200),
+    CONSTRAINT check_rec_estado CHECK(rec_estado IN ('Abierto', 'Cerrado'))
 );
 
 CREATE TABLE accion(
@@ -482,13 +485,17 @@ CREATE TABLE milla(
     fk_pago INTEGER
 );
 
-CREATE TABLE lista_deseos(
+CREATE TABLE lista_deseos (
+    lis_des_codigo SERIAL PRIMARY KEY, 
     fk_usuario INTEGER NOT NULL,
-    fk_paquete_turistico INTEGER NOT NULL,
-    fk_servicio INTEGER NOT NULL,
-    fk_traslado INTEGER NOT NULL,
-    PRIMARY KEY(fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado)
+    fk_paquete_turistico INTEGER,       
+    fk_servicio INTEGER,               
+    fk_traslado INTEGER             
 );
+
+CREATE UNIQUE INDEX idx_unique_servicio ON lista_deseos (fk_usuario, fk_servicio) WHERE fk_servicio IS NOT NULL;
+CREATE UNIQUE INDEX idx_unique_paquete ON lista_deseos (fk_usuario, fk_paquete_turistico) WHERE fk_paquete_turistico IS NOT NULL;
+CREATE UNIQUE INDEX idx_unique_traslado ON lista_deseos (fk_usuario, fk_traslado) WHERE fk_traslado IS NOT NULL;
 
 CREATE TABLE categoria(
     cat_codigo SERIAL PRIMARY KEY,

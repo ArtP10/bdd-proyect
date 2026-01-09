@@ -170,11 +170,11 @@
                     <label class="mt-2">Seleccionar Vuelo/Viaje:</label>
                     <div class="input-group">
                         <select v-model="selectedTransferId" class="input-field">
-                            <option value="" disabled>-- Resultados de búsqueda --</option>
-                            <option v-for="t in filteredTransfers" :value="t.id">
-                                📅 {{ t.fecha }} | {{ t.descripcion }} | 💲{{ t.costo }}
-                            </option>
-                        </select>
+    <option value="" disabled>-- Resultados de búsqueda --</option>
+    <option v-for="t in filteredTransfers" :value="t.id">
+        {{ t.nombre }} | {{ t.descripcion }} | 💲{{ t.precio }}
+    </option>
+</select>
                         <button class="btn-add" @click="assignItem('traslado')">Agregar</button>
                     </div>
                 </div>
@@ -339,10 +339,15 @@ const formatCurrency = (val) => Number(val).toFixed(2);
 const filteredTransfers = computed(() => {
     if (!searchTransfer.value) return listTransfers.value;
     const term = searchTransfer.value.toLowerCase();
-    return listTransfers.value.filter(t => 
-        t.descripcion.toLowerCase().includes(term) || 
-        t.fecha.includes(term)
-    );
+    
+    return listTransfers.value.filter(t => {
+        // Validación de seguridad (Optional Chaining ?.)
+        // Buscamos en 'descripcion' (que tiene la fecha) y en 'nombre' (origen->destino)
+        const desc = t.descripcion ? t.descripcion.toLowerCase() : '';
+        const nom = t.nombre ? t.nombre.toLowerCase() : '';
+        
+        return desc.includes(term) || nom.includes(term);
+    });
 });
 
 // --- FETCHING ---

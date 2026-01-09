@@ -73,6 +73,11 @@
             </div>
             <div class="actions">
               <button class="btn btn-primary btn-block" @click="handleItemSelection(item)">Seleccionar</button>
+              
+              <button class="btn btn-text-reviews" @click="openReviewsModal(item)">
+                  <i class="fa-solid fa-star"></i> Ver Opiniones
+              </button>
+              
               <button class="btn btn-outline btn-block" @click="handleItemSelection(item)">Ver detalles</button>
             </div>
           </div>
@@ -96,18 +101,57 @@
       </div>
     </div>
 
+    <div v-if="showReviewsModal" class="modal-overlay" @click.self="closeReviewsModal">
+        <div class="modal-content reviews-modal">
+            <div class="modal-header-simple">
+                <h3>Reseñas de {{ selectedProductTitle }}</h3>
+                <button class="close-btn" @click="closeReviewsModal">✕</button>
+            </div>
+            
+            <div v-if="loadingReviews" class="loading-box">
+                <i class="fa-solid fa-spinner fa-spin"></i> Cargando opiniones...
+            </div>
+
+            <div v-else-if="productReviews.length === 0" class="empty-reviews">
+                <i class="fa-regular fa-comment-dots"></i>
+                <p>Este producto aún no tiene reseñas.</p>
+            </div>
+
+            <div v-else class="reviews-list">
+                <div v-for="(review, index) in productReviews" :key="index" class="review-item">
+                    <div class="review-top">
+                        <span class="author-name">{{ review.viajero_nombre || review.autor }}</span>
+                        <span class="review-date">{{ formatDate(review.fecha) }}</span>
+                    </div>
+                    <div class="star-row">
+                        <StarRating :modelValue="review.calificacion" :readonly="true" />
+                    </div>
+                    <p class="review-body">"{{ review.comentario }}"</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue';
-import { useRoute, useRouter } from 'vue-router'; // Agregar useRouter
+import { useRoute, useRouter } from 'vue-router';
+// Importamos StarRating
+import StarRating from '../components/common/StarRating.vue'; 
 
 const route = useRoute();
-const router = useRouter(); // Instanciar router
+const router = useRouter();
 const results = ref([]);
 const loading = ref(true);
 const showLoginModal = ref(false);
+
+// Variables de Reseñas
+const showReviewsModal = ref(false);
+const productReviews = ref([]);
+const loadingReviews = ref(false);
+const selectedProductTitle = ref('');
 
 onMounted(async () => {
   await fetchResults();
@@ -140,29 +184,45 @@ const fetchResults = async () => {
   }
 };
 
-// --- LÓGICA DE SELECCIÓN Y AUTENTICACIÓN ---
-const handleItemSelection = (item) => {
-    // Validar usuario cliente
-    const userRole = localStorage.getItem('userRole'); 
+// --- LÓGICA DE RESEÑAS ---
+const openReviewsModal = async (item) => {
+    selectedProductTitle.value = item.titulo;
+    showReviewsModal.value = true;
+    loadingReviews.value = true;
+    productReviews.value = [];
 
-    if (userRole === 'Cliente') {
-        router.push('/client/cart');
-    } else {
-        showLoginModal.value = true;
+    // Normalizar Tipo (Search Results usualmente trae 'categoria' o 'subtipo')
+    let type = item.categoria || item.subtipo || 'SERVICIO';
+    type = type.toUpperCase();
+    
+    if(type.includes('TRASLADO')) type = 'TRASLADO';
+    else if(type.includes('PAQUETE')) type = 'PAQUETE';
+    else type = 'SERVICIO';
+
+    try {
+        const res = await fetch(`http://localhost:3000/api/reviews/product/${type}/${item.id}`);
+        const data = await res.json();
+        if(data.success) {
+            productReviews.value = data.data;
+        }
+    } catch(e) {
+        console.error("Error cargando reseñas", e);
+    } finally {
+        loadingReviews.value = false;
     }
 };
 
-const closeModal = () => {
-    showLoginModal.value = false;
-};
+const closeReviewsModal = () => { showReviewsModal.value = false; };
 
-const goToLogin = () => {
-    showLoginModal.value = false;
-    router.push('/login');
+// --- HELPERS Y NAVEGACIÓN ---
+const handleItemSelection = (item) => {
+    const userRole = localStorage.getItem('userRole'); 
+    if (userRole === 'Cliente') router.push('/client/cart');
+    else showLoginModal.value = true;
 };
-// --------------------------------------------
+const closeModal = () => showLoginModal.value = false;
+const goToLogin = () => { showLoginModal.value = false; router.push('/login'); };
 
-// --- Helpers de Formato y Estilo ---
 const getIconClass = (subtipo) => {
   if (!subtipo) return 'fa-solid fa-star';
   const t = subtipo.toLowerCase();
@@ -188,47 +248,24 @@ const formatTime = (dateString) => {
 </script>
 
 <style scoped>
-/* ESTILOS PREVIOS SE MANTIENEN IGUAL... */
+/* ESTILOS GENERALES */
+.results-container { background-color: #F5F7FA; min-height: 100vh; font-family: 'Segoe UI', sans-serif; color: #333; }
+.container { max-width: 1000px; margin: 0 auto; padding: 0 20px; }
 
-.results-container {
-  background-color: #F5F7FA;
-  min-height: 100vh;
-  font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  color: #333;
-}
-
-.container {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 0 20px;
-}
-
-.results-header {
-  background: white;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-  padding: 1rem 0;
-  margin-bottom: 2rem;
-}
-
+/* HEADER */
+.results-header { background: white; box-shadow: 0 2px 10px rgba(0,0,0,0.05); padding: 1rem 0; margin-bottom: 2rem; }
 .header-content { display: flex; justify-content: space-between; align-items: center; }
 .logo-area { font-size: 1.4rem; font-weight: 800; color: #00BCD4; cursor: pointer; }
 .search-summary { display: flex; gap: 10px; }
 .summary-pill { background: #E0F7FA; color: #00838F; padding: 5px 15px; border-radius: 20px; font-size: 0.9rem; font-weight: 600; }
 
+/* LISTA DE RESULTADOS */
 .results-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
 .results-top-bar h2 { font-size: 1.5rem; color: #2c3e50; margin: 0; }
 .count-badge { color: #666; font-size: 0.9rem; }
 
 .cards-list { display: flex; flex-direction: column; gap: 20px; padding-bottom: 40px; }
-.result-card {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  display: flex;
-  padding: 20px;
-  transition: transform 0.2s, box-shadow 0.2s;
-  border: 1px solid transparent;
-}
+.result-card { background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); display: flex; padding: 20px; transition: transform 0.2s, box-shadow 0.2s; border: 1px solid transparent; }
 .result-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); border-color: #E0F7FA; }
 
 .card-left { width: 120px; display: flex; align-items: center; justify-content: center; border-right: 1px solid #f0f0f0; padding-right: 20px; margin-right: 20px; }
@@ -248,62 +285,30 @@ const formatTime = (dateString) => {
 .amount { font-size: 1.8rem; font-weight: 800; color: #E91E63; }
 .actions { width: 100%; display: flex; flex-direction: column; gap: 8px; }
 
+/* BOTONES */
 .btn { padding: 8px 16px; border-radius: 6px; border: none; font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; }
 .btn-block { width: 100%; }
 .btn-primary { background-color: #E91E63; color: white; }
 .btn-primary:hover { background-color: #D81B60; }
 .btn-outline { background-color: transparent; border: 1px solid #00BCD4; color: #00BCD4; }
 .btn-outline:hover { background-color: #E0F7FA; }
+.btn-text-reviews { background: transparent; color: #fbbf24; border: 1px solid #fbbf24; border-radius: 6px; }
+.btn-text-reviews:hover { background: #fffbeb; }
 
-.loading-state, .no-results { text-align: center; padding: 4rem; color: #888; }
-.loading-state i { color: #00BCD4; margin-right: 10px; }
-.no-results button { margin-top: 1rem; }
+/* ESTILOS MODAL (Igual a HomePage) */
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(4px); }
+.reviews-modal { background: white; border-radius: 12px; width: 90%; max-width: 500px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.2); animation: modalPop 0.3s ease-out; overflow: hidden; }
+.modal-header-simple { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+.modal-header-simple h3 { margin: 0; font-size: 1.1rem; color: #1f2937; }
+.close-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #9ca3af; }
+.loading-box, .empty-reviews { padding: 40px; text-align: center; color: #6b7280; }
+.reviews-list { padding: 20px; max-height: 400px; overflow-y: auto; text-align: left; }
+.review-item { margin-bottom: 15px; border-bottom: 1px solid #f0f0f0; padding-bottom: 15px; }
+.review-item:last-child { border-bottom: none; }
+.review-top { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.9rem; }
+.author-name { font-weight: 700; color: #374151; }
+.review-date { color: #9ca3af; font-size: 0.8rem; }
+.review-body { color: #4b5563; font-style: italic; margin-top: 5px; line-height: 1.4; }
 
-@media (max-width: 768px) {
-  .result-card { flex-direction: column; text-align: center; }
-  .card-left, .card-right { width: 100%; border: none; padding: 0; margin: 0; }
-  .card-left { margin-bottom: 15px; justify-content: center; }
-  .card-right { margin-top: 15px; align-items: center; }
-  .actions { margin-top: 10px; }
-  .time-info { justify-content: center; }
-  .card-tag { margin: 0 auto 5px auto; }
-}
-
-/* --- ESTILOS DEL MODAL --- */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-.modal-content {
-  background: white;
-  padding: 2rem;
-  border-radius: 16px;
-  width: 90%;
-  max-width: 400px;
-  text-align: center;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.2);
-  animation: modalPop 0.3s ease-out;
-}
-
-.modal-icon { font-size: 3rem; color: #E91E63; margin-bottom: 1rem; }
-.modal-content h3 { margin: 0 0 0.5rem 0; color: #333; }
-.modal-content p { color: #666; margin-bottom: 2rem; line-height: 1.5; }
-
-.modal-actions { display: flex; gap: 10px; justify-content: center; }
-.modal-actions .btn { flex: 1; }
-
-@keyframes modalPop {
-    from { opacity: 0; transform: scale(0.9); }
-    to { opacity: 1; transform: scale(1); }
-}
+@keyframes modalPop { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
 </style>

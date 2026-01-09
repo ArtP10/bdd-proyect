@@ -430,36 +430,60 @@ watch(selectedProductType, async (val) => {
     selectedProduct.value = null;
     availableProducts.value = [];
     let url = '';
-    let options = { method: 'GET' };
+    let options = { 
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+    };
 
-    // Determinamos la URL
-    if(val === 'servicio') url = 'http://localhost:3000/api/opciones/servicios'; 
-    else if(val === 'traslado') url = 'http://localhost:3000/api/traslados-disponibles'; 
-    else if(val === 'paquete') url = 'http://localhost:3000/api/paquetes';
-    else if(val === 'wishlist') url = 'http://localhost:3000/api/cart/wishlist-items'; // Ruta de la compañera
+    // Determinamos la URL y Opciones
+    if(val === 'servicio') {
+        url = 'http://localhost:3000/api/opciones/servicios';
+    } 
+    else if(val === 'traslado') {
+        url = 'http://localhost:3000/api/traslados-disponibles';
+    } 
+    else if(val === 'paquete') {
+        url = 'http://localhost:3000/api/paquetes';
+    } 
+    else if(val === 'wishlist') {
+        url = 'http://localhost:3000/api/cart/wishlist-items';
+        options.method = 'POST';
+        options.body = JSON.stringify({ user_id: userSession.user_id });
+    }
 
     try {
         const res = await fetch(url, options);
         const data = await res.json();
+        
         if(data.success) {
-            availableProducts.value = data.data.map(item => ({
+            // MAPEO
+            let tempItems = data.data.map(item => ({
                 ...item,
-                // Fusión: Normalización de datos (Lista_Deseos) + Millas (Main)
+                id: item.id_original || item.id || item.codigo_producto || item.ser_codigo || item.tras_codigo || item.paq_tur_codigo,
                 
-                // 1. ID Unificado: Vital para que el v-model y las validaciones funcionen igual para todo
-                id: item.id_original || item.id || item.ser_codigo || item.tras_codigo || item.paq_tur_codigo,
+                nombre: item.nombre || item.nombre_producto || item.descripcion || item.paq_tur_nombre,
                 
-                // 2. Nombre y Precio unificados
-                nombre: item.nombre || item.descripcion || item.paq_tur_nombre,
-                precio: parseFloat(item.precio || item.costo || item.paq_tur_monto_total || 0),
+                // LÓGICA DE PRECIO: Usar el precio con descuento si existe y es menor
+                precio: parseFloat(item.precio_con_descuento || item.precio_final || item.precio || item.costo || 0),
                 
-                // 3. Tipo Real: Si viene de wishlist, el item ya trae su tipo ('servicio', 'paquete').
-                // Si es búsqueda normal, usamos el valor del select (val).
-                tipo: item.tipo || val,
+                // Guardamos el precio original solo para referencia visual si quieres (opcional)
+                precio_original: parseFloat(item.precio || item.costo || 0),
 
-                // 4. Millas (De tu rama Main): Aseguramos que no se pierda este beneficio
-                millas: parseInt(item.millas || item.ser_millas_otorgadas || item.rut_millas_otorgadas || 0)
+                tipo: item.tipo || item.tipo_producto || val,
+                
+                fecha_inicio: item.fecha_inicio
             }));
+
+            // --- FILTRO DE VENCIDOS PARA EL CARRITO ---
+            if (val === 'wishlist') {
+                const ahora = new Date();
+                tempItems = tempItems.filter(i => {
+                    if (!i.fecha_inicio) return true; // Si no tiene fecha, lo mostramos por si acaso
+                    return new Date(i.fecha_inicio) > ahora;
+                });
+            }
+            
+            availableProducts.value = tempItems;
         }
     } catch(e) { console.error("Error cargando productos:", e); }
 });

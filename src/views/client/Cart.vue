@@ -73,16 +73,13 @@
             <option value="servicio">Servicios / Actividades</option>
             <option value="traslado">Traslados / Vuelos</option>
             <option value="paquete">Paquetes Turísticos</option>
-            <!-- OPCION DE WISHLIST PARA EL ITINERARIO -->
-             <!--MELANIE -->
             <option value="wishlist">⭐ Mi Lista de Deseos</option>
-            <!--------------------------->
           </select>
           
           <select v-model="selectedProduct" class="form-control product-select">
             <option :value="null" disabled>-- Seleccione una opción --</option>
             <option v-for="p in availableProducts" :key="p.id" :value="p">
-              {{ p.nombre || p.descripcion }} - ${{ p.precio || p.costo }} 
+              {{ p.nombre }} - ${{ p.precio }} 
               <span v-if="p.millas > 0"> (+{{ p.millas }} Millas)</span>
             </option>
           </select>
@@ -95,7 +92,8 @@
 
       <div class="cart-list">
         <div v-if="cartItems.length === 0" class="empty-cart">
-          Tu itinerario está vacío. ¡Agrega servicios arriba!
+          <i class="fa-solid fa-cart-arrow-down"></i>
+          <p>Tu itinerario está vacío. ¡Agrega servicios arriba!</p>
         </div>
 
         <div v-else class="cart-item" v-for="(item, idx) in cartItems" :key="idx">
@@ -105,28 +103,28 @@
           
           <div class="item-details">
             <div class="title-row">
-                <h4>{{ item.nombre || item.descripcion }}</h4>
+                <h4>{{ item.nombre }}</h4>
                 <span v-if="item.millas > 0" class="badge-miles">
                     <i class="fa-solid fa-star"></i> +{{ item.millas * selectedTravelers.length }} Millas
                 </span>
             </div>
             <span class="badge">{{ item.tipo }}</span>
             <div v-if="item.es_paquete" class="warning-text">
-              <i class="fa-solid fa-circle-exclamation"></i> Aplica para todos los viajeros
+              <i class="fa-solid fa-circle-exclamation"></i> Aplica reglas para todos los viajeros
             </div>
           </div>
           
           <div class="item-math">
             <div class="math-row">
                 <span class="text-muted">Unitario:</span>
-                <span>${{ item.precio || item.costo }}</span>
+                <span>${{ item.precio }}</span>
             </div>
             <div class="math-row">
                 <span class="text-muted">Viajeros:</span>
                 <span>x {{ selectedTravelers.length }}</span>
             </div>
             <div class="math-total">
-                <strong>${{ ((item.precio || item.costo) * selectedTravelers.length).toFixed(2) }}</strong>
+                <strong>${{ (item.precio * selectedTravelers.length).toFixed(2) }}</strong>
             </div>
           </div>
 
@@ -162,7 +160,7 @@
     <div v-if="currentStep === 3" class="step-content fade-in">
       <div class="section-header">
         <h3>Confirmación de Reserva</h3>
-        <p>Elige tu modalidad de pago.</p>
+        <p>Elige tu modalidad de pago y procesa la orden.</p>
       </div>
       
       <div class="payment-grid">
@@ -214,10 +212,10 @@
           <div class="summary-list">
              <div v-for="(item, i) in cartItems" :key="i" class="summary-item">
                 <span class="item-name">
-                    {{ item.nombre || item.descripcion }} 
+                    {{ item.nombre }} 
                     <span class="qty-tag">x{{ selectedTravelers.length }}</span>
                 </span>
-                <span class="item-amount">${{ ((item.precio || item.costo) * selectedTravelers.length).toFixed(2) }}</span>
+                <span class="item-amount">${{ (item.precio * selectedTravelers.length).toFixed(2) }}</span>
              </div>
           </div>
           <hr>
@@ -231,7 +229,7 @@
           
           <button class="btn-confirm" @click="registerPurchase" :disabled="processing">
             <i v-if="processing" class="fa-solid fa-spinner fa-spin"></i> 
-            {{ processing ? 'Procesando...' : 'Confirmar Reserva y Pagar' }}
+            {{ processing ? 'Validando Reglas...' : 'Confirmar Reserva y Pagar' }}
           </button>
         </div>
       </div>
@@ -270,9 +268,9 @@ const selectedProductType = ref('servicio');
 const selectedProduct = ref(null);
 const cartItems = ref([]);
 
-// NUEVO: Estado para Financiamiento Dinámico
-const paymentMode = ref('contado'); // 'contado' o 'credito'
-const selectedMonths = ref(3); // Por defecto 3 meses
+// Estado para Financiamiento
+const paymentMode = ref('contado'); 
+const selectedMonths = ref(3);
 
 const showPaymentModal = ref(false);
 const paymentDetails = reactive({ amount: 0, type: '', id: 0 });
@@ -281,15 +279,13 @@ const userSession = JSON.parse(localStorage.getItem('user_session') || '{}');
 // --- CÁLCULOS ---
 const cartTotal = computed(() => {
     return cartItems.value.reduce((acc, item) => {
-        const price = parseFloat(item.precio || item.costo || 0);
-        return acc + (price * selectedTravelers.value.length);
+        return acc + (item.precio * selectedTravelers.value.length);
     }, 0);
 });
 
 const totalMilesToEarn = computed(() => {
     return cartItems.value.reduce((acc, item) => {
-        const miles = parseInt(item.millas || 0); 
-        return acc + (miles * selectedTravelers.value.length);
+        return acc + (item.millas * selectedTravelers.value.length);
     }, 0);
 });
 
@@ -300,29 +296,25 @@ const amountToPayToday = computed(() => {
 
 const calculateQuota = computed(() => {
     if (paymentMode.value === 'contado') return 0;
-    
-    // Cálculo coincidente con SP: 50% financiado + 10% interés
     const financedAmount = cartTotal.value * 0.5;
     const interest = financedAmount * 0.10; 
-    const totalDebt = financedAmount + interest;
-    
-    return totalDebt / selectedMonths.value;
+    return (financedAmount + interest) / selectedMonths.value;
 });
 
-// --- LÓGICA DE NEGOCIO ---
+// --- LÓGICA DE NEGOCIO (CORE) ---
 
-// 1. Registrar Compra (Solo genera la deuda/reserva)
+// 1. Registrar Compra (Valida Reglas -> Crea Reserva -> Devuelve ID Pago)
 const registerPurchase = async () => {
     processing.value = true;
     
+    // Normalizamos el Payload: ID unificado y Tipo
     const itemsPayload = cartItems.value.map(i => ({ 
         tipo: i.tipo, 
-        id: i.id || i.ser_codigo || i.tras_codigo || i.paq_tur_codigo 
+        id: i.id // ID normalizado en la carga
     }));
 
-    // Payload dinámico para el SP
     const planData = {
-        plan: paymentMode.value, // 'contado' o 'credito'
+        plan: paymentMode.value, 
         meses: paymentMode.value === 'credito' ? selectedMonths.value : null
     };
 
@@ -342,24 +334,26 @@ const registerPurchase = async () => {
         const data = await res.json();
         
         if(data.success) {
-            // EXITO REGISTRANDO -> AHORA ABRIMOS EL MODAL PARA PAGAR
+            // EXITO: Pasó validación y se creó la reserva
             paymentDetails.amount = parseFloat(data.data.monto_pagar);
-            paymentDetails.type = data.data.origen_tipo; // 'compra' o 'cuota'
+            paymentDetails.type = data.data.origen_tipo; 
             paymentDetails.id = data.data.origen_id;
             
             showPaymentModal.value = true;
         } else {
-            alert('Error al registrar reserva: ' + data.message);
+            // ERROR DE REGLAS DE NEGOCIO O VALIDACIÓN
+            // Aquí mostramos el mensaje detallado que viene del SP
+            alert('⛔ No se puede procesar la compra:\n\n' + data.message);
         }
     } catch(e) {
-        alert('Error de conexión al registrar');
+        alert('Error de conexión con el servidor.');
         console.error(e);
     } finally {
         processing.value = false;
     }
 };
 
-// 2. Procesar Pago (Cuando el modal emite 'payment-success')
+// 2. Procesar Pago (Solo si el paso anterior fue exitoso)
 const handlePaymentSuccess = async (paymentPayload) => {
     showPaymentModal.value = false;
     processing.value = true;
@@ -367,7 +361,7 @@ const handlePaymentSuccess = async (paymentPayload) => {
     try {
         const payload = {
             quota_id: paymentDetails.id, 
-            origen: paymentDetails.type, // Clave para el backend
+            origen: paymentDetails.type, 
             pago: {
                 metodo: paymentPayload.metodo,
                 datos: paymentPayload.datos,
@@ -384,15 +378,14 @@ const handlePaymentSuccess = async (paymentPayload) => {
         const data = await res.json();
 
         if(data.success) {
-            alert('¡Pago procesado exitosamente!');
+            alert('✅ ¡Pago procesado exitosamente! Disfruta tu viaje.');
             router.push('/client/dashboard');
         } else {
-            alert('Reserva creada, pero el pago falló: ' + data.message);
+            alert('⚠️ Reserva creada, pero el pago falló: ' + data.message);
             router.push('/client/dashboard/payments'); 
         }
-
     } catch(e) {
-        alert('Error de conexión al pagar.');
+        alert('Error al procesar el pago.');
     } finally {
         processing.value = false;
     }
@@ -408,9 +401,7 @@ const loadTravelers = async () => {
             body: JSON.stringify({ user_id: userSession.user_id })
         });
         const data = await res.json();
-        if(data.success) {
-            myTravelers.value = [...data.data];
-        }
+        if(data.success) myTravelers.value = [...data.data];
     } catch(e) { console.error(e); } finally { loading.value = false; }
 };
 
@@ -423,9 +414,7 @@ const toggleTraveler = (id) => {
 };
 
 
-// --- PASO 2: CARGA DINÁMICA DE PRODUCTOS ---
-//--- CAMBIO DEL SELECT PARA QUE APAREZCA WISHLIST ---
-//--- MELA ---// 
+// --- PASO 2: CARGA DINÁMICA DE PRODUCTOS (FUSIONADO) ---
 watch(selectedProductType, async (val) => {
     selectedProduct.value = null;
     availableProducts.value = [];
@@ -456,29 +445,31 @@ watch(selectedProductType, async (val) => {
         const data = await res.json();
         
         if(data.success) {
-            // MAPEO
+            // MAPEO FUSIONADO
             let tempItems = data.data.map(item => ({
                 ...item,
-                id: item.id_original || item.id || item.codigo_producto || item.ser_codigo || item.tras_codigo || item.paq_tur_codigo,
+                
+                // Normalización de ID (Unificado para que funcione validación y carrito)
+                id: item.id || item.common_id || item.codigo_producto || item.ser_codigo || item.tras_codigo || item.paq_tur_codigo,
                 
                 nombre: item.nombre || item.nombre_producto || item.descripcion || item.paq_tur_nombre,
                 
-                // LÓGICA DE PRECIO: Usar el precio con descuento si existe y es menor
-                precio: parseFloat(item.precio_con_descuento || item.precio_final || item.precio || item.costo || 0),
+                // LÓGICA DE PRECIO (De main: soporta descuentos)
+                precio: parseFloat(item.precio_con_descuento || item.precio_final || item.precio || item.costo || item.paq_tur_monto_total || 0),
                 
-                // Guardamos el precio original solo para referencia visual si quieres (opcional)
-                precio_original: parseFloat(item.precio || item.costo || 0),
+                // LÓGICA DE MILLAS (Fusionada)
+                millas: parseInt(item.millas || item.ser_millas_otorgadas || item.rut_millas_otorgadas || item.paq_tur_costo_en_millas || 0),
 
                 tipo: item.tipo || item.tipo_producto || val,
                 
                 fecha_inicio: item.fecha_inicio
             }));
 
-            // --- FILTRO DE VENCIDOS PARA EL CARRITO ---
+            // --- FILTRO DE VENCIDOS PARA WISHLIST ---
             if (val === 'wishlist') {
                 const ahora = new Date();
                 tempItems = tempItems.filter(i => {
-                    if (!i.fecha_inicio) return true; // Si no tiene fecha, lo mostramos por si acaso
+                    if (!i.fecha_inicio) return true; 
                     return new Date(i.fecha_inicio) > ahora;
                 });
             }
@@ -487,35 +478,33 @@ watch(selectedProductType, async (val) => {
         }
     } catch(e) { console.error("Error cargando productos:", e); }
 });
-//--------------------------------------------------------------
-//Asegurar que el icono se asigne correctamente según el tipo real del producto (especialmente si viene de la wishlist)
+
+// Agregar al Carrito (Fusionado)
 const addItemToCart = () => {
     if(!selectedProduct.value) return;
     
-    // Obtenemos el tipo real del objeto (crucial para wishlist que mezcla cosas)
     const tipoReal = selectedProduct.value.tipo;
     const productId = selectedProduct.value.id;
 
-    // Validación de duplicados (Lógica de Main mejorada con IDs normalizados)
+    // Validación de duplicados usando el ID normalizado
     const exists = cartItems.value.find(item => {
         return item.id === productId && item.tipo === tipoReal;
     });
 
     if (exists) { 
-        alert('Este ítem ya está en el carrito.'); 
+        alert('Este ítem ya está en tu itinerario.'); 
         return; 
     }
 
     // Agregar al carrito
     cartItems.value.push({
         ...selectedProduct.value,
-        tipo: tipoReal, // Usamos el tipo real, no el del select (por si es wishlist)
-        es_paquete: tipoReal === 'paquete' // Flag auxiliar para UI
+        tipo: tipoReal, 
+        es_paquete: tipoReal === 'paquete' // Flag para mostrar advertencia de reglas
     });
     
     selectedProduct.value = null;
 };
-//----------
 
 const getIcon = (tipo) => {
     if(tipo === 'servicio') return 'fa-solid fa-ticket';
@@ -567,7 +556,7 @@ onMounted(() => {
 .btn-add { background: #10b981; color: white; border: none; padding: 0 20px; border-radius: 6px; cursor: pointer; font-weight: 600; }
 .btn-add:disabled { background: #94a3b8; cursor: not-allowed; }
 
-/* Lista Carrito (CON TUS DETALLES VISUALES) */
+/* Lista Carrito */
 .cart-list { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 20px; }
 .cart-item { display: flex; align-items: center; padding: 15px; border-bottom: 1px solid #f1f5f9; }
 .item-icon { font-size: 1.2rem; color: #64748b; margin-right: 15px; width: 40px; text-align: center; }
@@ -576,6 +565,8 @@ onMounted(() => {
 .badge { background: #f1f5f9; color: #475569; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }
 .badge-miles { background: #fffbeb; color: #d97706; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; border: 1px solid #fcd34d; }
 .warning-text { color: #f59e0b; font-size: 0.8rem; margin-top: 2px; }
+.empty-cart { text-align: center; padding: 40px; color: #94a3b8; }
+.empty-cart i { font-size: 2rem; margin-bottom: 10px; display: block; }
 
 /* Estilos de Precio Unitario y Totales */
 .item-math { text-align: right; min-width: 140px; font-size: 0.9rem; }

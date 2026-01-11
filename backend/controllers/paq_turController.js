@@ -5,10 +5,15 @@ const pool = require('../config/db');
 // ==========================================
 
 const createPackage = async (req, res) => {
-    const { nombre, monto_total, monto_subtotal, costo_millas } = req.body;
+    // 1. Agregamos 'descripcion' a la extracción
+    const { nombre, descripcion, monto_total, monto_subtotal, costo_millas } = req.body;
     try {
-        const query = `CALL sp_crear_paquete_turistico($1, $2, $3, $4, NULL, NULL, NULL)`;
-        const values = [nombre, monto_total, monto_subtotal, costo_millas];
+        // 2. Agregamos el parámetro extra $2 en el CALL
+        const query = `CALL sp_crear_paquete_turistico($1, $2, $3, $4, $5, NULL, NULL, NULL)`;
+        
+        // 3. Pasamos 'descripcion' en el array de valores
+        const values = [nombre, descripcion, monto_total, monto_subtotal, costo_millas];
+        
         const result = await pool.query(query, values);
         const resp = result.rows[0];
         
@@ -22,6 +27,7 @@ const createPackage = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error interno al crear paquete' });
     }
 };
+
 
 const getPackages = async (req, res) => {
     try {
@@ -292,8 +298,37 @@ const removePackageElement = async (req, res) => {
         res.status(500).json({ success: false, message: 'Error interno al eliminar' });
     }
 };
+// --- NUEVAS FUNCIONES PARA CRUD DE REGLAS ---
 
+const updateRule = async (req, res) => {
+    const { id } = req.params;
+    const { atributo, operador, valor } = req.body;
+    try {
+        await pool.query('CALL sp_modificar_regla_generica($1, $2, $3, $4)', 
+            [id, atributo, operador, valor]);
+        res.json({ success: true, message: 'Regla actualizada correctamente' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Error al actualizar regla' });
+    }
+};
+
+const deleteRule = async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('CALL sp_eliminar_regla_generica($1)', [id]);
+        res.json({ success: true, message: 'Regla eliminada correctamente' });
+    } catch (err) {
+        // Código 23503 es violación de llave foránea (la regla está en uso)
+        if (err.code === '23503') {
+            return res.status(409).json({ success: false, message: 'No se puede eliminar: Esta regla está asignada a uno o más paquetes.' });
+        }
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Error interno al eliminar regla' });
+    }
+};
 // ... module.exports ...
+
 
 module.exports = {
     // CRUD
@@ -308,6 +343,8 @@ module.exports = {
     createRule,
     getRules,
     assignRuleToPackage,
+    updateRule,
+    deleteRule,
 
     // Servicios Genericos
     getGenericServices,

@@ -73,11 +73,12 @@
             <option value="servicio">Servicios / Actividades</option>
             <option value="traslado">Traslados / Vuelos</option>
             <option value="paquete">Paquetes Turísticos</option>
+            <option value="wishlist">⭐ Mi Lista de Deseos</option>
           </select>
           
           <select v-model="selectedProduct" class="form-control product-select">
             <option :value="null" disabled>-- Seleccione una opción --</option>
-            <option v-for="p in availableProducts" :key="p.common_id" :value="p">
+            <option v-for="p in availableProducts" :key="p.id" :value="p">
               {{ p.nombre }} - ${{ p.precio }} 
               <span v-if="p.millas > 0"> (+{{ p.millas }} Millas)</span>
             </option>
@@ -109,7 +110,7 @@
             </div>
             <span class="badge">{{ item.tipo }}</span>
             <div v-if="item.es_paquete" class="warning-text">
-              <i class="fa-solid fa-circle-exclamation"></i> Aplica para todos los viajeros
+              <i class="fa-solid fa-circle-exclamation"></i> Aplica reglas para todos los viajeros
             </div>
           </div>
           
@@ -306,10 +307,10 @@ const calculateQuota = computed(() => {
 const registerPurchase = async () => {
     processing.value = true;
     
-    // Normalizamos el Payload para que el backend reciba {tipo, id} limpios
+    // Normalizamos el Payload: ID unificado y Tipo
     const itemsPayload = cartItems.value.map(i => ({ 
         tipo: i.tipo, 
-        id: i.common_id // Usamos el ID normalizado
+        id: i.id // ID normalizado en la carga
     }));
 
     const planData = {
@@ -412,47 +413,96 @@ const toggleTraveler = (id) => {
     }
 };
 
-// Búsqueda de Productos con Normalización de ID
+
+// --- PASO 2: CARGA DINÁMICA DE PRODUCTOS (FUSIONADO) ---
 watch(selectedProductType, async (val) => {
     selectedProduct.value = null;
     availableProducts.value = [];
     let url = '';
-    
-    if(val === 'servicio') url = 'http://localhost:3000/api/opciones/servicios'; 
-    else if(val === 'traslado') url = 'http://localhost:3000/api/traslados-disponibles'; 
-    else if(val === 'paquete') url = 'http://localhost:3000/api/paquetes';
+    let options = { 
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+    };
+
+    // Determinamos la URL y Opciones
+    if(val === 'servicio') {
+        url = 'http://localhost:3000/api/opciones/servicios';
+    } 
+    else if(val === 'traslado') {
+        url = 'http://localhost:3000/api/traslados-disponibles';
+    } 
+    else if(val === 'paquete') {
+        url = 'http://localhost:3000/api/paquetes';
+    } 
+    else if(val === 'wishlist') {
+        url = 'http://localhost:3000/api/cart/wishlist-items';
+        options.method = 'POST';
+        options.body = JSON.stringify({ user_id: userSession.user_id });
+    }
 
     try {
-        const res = await fetch(url);
+        const res = await fetch(url, options);
         const data = await res.json();
+        
         if(data.success) {
-            availableProducts.value = data.data.map(item => ({
+            // MAPEO FUSIONADO
+            let tempItems = data.data.map(item => ({
                 ...item,
-                // IMPORTANTE: Normalizamos los campos para que el front los entienda igual
-                common_id: item.id || item.ser_codigo || item.tras_codigo || item.paq_tur_codigo,
-                nombre: item.nombre || item.descripcion || item.paq_tur_nombre, 
-                precio: parseFloat(item.costo || item.precio || item.paq_tur_monto_total || 0),
-                millas: parseInt(item.millas || item.ser_millas_otorgadas || item.rut_millas_otorgadas || item.paq_tur_costo_en_millas || 0)
+                
+                // Normalización de ID (Unificado para que funcione validación y carrito)
+                id: item.id || item.common_id || item.codigo_producto || item.ser_codigo || item.tras_codigo || item.paq_tur_codigo,
+                
+                nombre: item.nombre || item.nombre_producto || item.descripcion || item.paq_tur_nombre,
+                
+                // LÓGICA DE PRECIO (De main: soporta descuentos)
+                precio: parseFloat(item.precio_con_descuento || item.precio_final || item.precio || item.costo || item.paq_tur_monto_total || 0),
+                
+                // LÓGICA DE MILLAS (Fusionada)
+                millas: parseInt(item.millas || item.ser_millas_otorgadas || item.rut_millas_otorgadas || item.paq_tur_costo_en_millas || 0),
+
+                tipo: item.tipo || item.tipo_producto || val,
+                
+                fecha_inicio: item.fecha_inicio
             }));
+
+            // --- FILTRO DE VENCIDOS PARA WISHLIST ---
+            if (val === 'wishlist') {
+                const ahora = new Date();
+                tempItems = tempItems.filter(i => {
+                    if (!i.fecha_inicio) return true; 
+                    return new Date(i.fecha_inicio) > ahora;
+                });
+            }
+            
+            availableProducts.value = tempItems;
         }
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error("Error cargando productos:", e); }
 });
 
+// Agregar al Carrito (Fusionado)
 const addItemToCart = () => {
     if(!selectedProduct.value) return;
     
-    // Validamos duplicados usando el ID normalizado
-    const exists = cartItems.value.find(item => 
-        item.common_id === selectedProduct.value.common_id && item.tipo === selectedProductType.value
-    );
-    
-    if (exists) { alert('Este ítem ya está en tu itinerario.'); return; }
-    
-    cartItems.value.push({ 
-        ...selectedProduct.value, 
-        tipo: selectedProductType.value,
-        es_paquete: selectedProductType.value === 'paquete'
+    const tipoReal = selectedProduct.value.tipo;
+    const productId = selectedProduct.value.id;
+
+    // Validación de duplicados usando el ID normalizado
+    const exists = cartItems.value.find(item => {
+        return item.id === productId && item.tipo === tipoReal;
     });
+
+    if (exists) { 
+        alert('Este ítem ya está en tu itinerario.'); 
+        return; 
+    }
+
+    // Agregar al carrito
+    cartItems.value.push({
+        ...selectedProduct.value,
+        tipo: tipoReal, 
+        es_paquete: tipoReal === 'paquete' // Flag para mostrar advertencia de reglas
+    });
+    
     selectedProduct.value = null;
 };
 

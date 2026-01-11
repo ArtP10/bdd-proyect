@@ -1184,23 +1184,64 @@ INSERT INTO preferencia (fk_usuario, fk_categoria) VALUES
 -- =====================================================
 -- 37. LISTA DE DESEOS (10 registros)
 -- =====================================================
-INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES
-(97, 1, 1, 1),
-(98, 2, 2, 2),
-(99, 3, 3, 3),
-(100, 4, 4, 4),
-(101, 5, 5, 5),
-(102, 6, 6, 6),
-(103, 7, 7, 7),
-(104, 8, 8, 8),
-(105, 9, 9, 9),
-(106, 10, 10, 10);
+
+
+
+-- Usuario 97 (3 filas distintas)
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (97, 1, NULL, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (97, NULL, 1, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (97, NULL, NULL, 1);
+
+-- Usuario 98
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (98, 2, NULL, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (98, NULL, 2, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (98, NULL, NULL, 2);
+
+-- Usuario 99
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (99, 3, NULL, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (99, NULL, 3, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (99, NULL, NULL, 3);
+
+-- Usuario 100
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (100, 4, NULL, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (100, NULL, 4, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (100, NULL, NULL, 4);
+
+-- Usuario 101
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (101, 5, NULL, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (101, NULL, 5, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (101, NULL, NULL, 5);
+
+-- Usuario 102
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (102, 6, NULL, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (102, NULL, 6, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (102, NULL, NULL, 6);
+
+-- Usuario 103
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (103, 7, NULL, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (103, NULL, 7, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (103, NULL, NULL, 7);
+
+-- Usuario 104
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (104, 8, NULL, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (104, NULL, 8, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (104, NULL, NULL, 8);
+
+-- Usuario 105
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (105, 9, NULL, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (105, NULL, 9, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (105, NULL, NULL, 9);
+
+-- Usuario 106
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (106, 10, NULL, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (106, NULL, 10, NULL);
+INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) VALUES (106, NULL, NULL, 10);
 
 -- =====================================================
 -- 38. RESEÑAS (10 registros CORREGIDOS)
 -- =====================================================
 -- La lógica es: (..., fk_compra_correcta, id_detalle_correcto)
-INSERT INTO resena (res_calificacion_numerica, res_descripcion, res_fecha_hota_creacion, fk_detalle_reserva, fk_detalle_reserva_2) VALUES
+INSERT INTO resena (res_calificacion_numerica, res_descripcion, res_fecha_hora_creacion, fk_detalle_reserva, fk_detalle_reserva_2) VALUES
 (5, 'Excelente servicio', '2025-06-20 10:00:00', 1, 1), -- Compra 1, Detalle 1
 (4, 'Muy buena experiencia', '2025-07-25 11:00:00', 1, 2), -- Compra 1, Detalle 2
 (5, 'Recomendado totalmente', '2025-08-20 12:00:00', 2, 3), -- Compra 2, Detalle 3

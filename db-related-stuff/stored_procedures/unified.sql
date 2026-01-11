@@ -1588,26 +1588,37 @@ $BODY$;
 DROP FUNCTION IF EXISTS sp_listar_servicios_genericos();
 CREATE OR REPLACE FUNCTION sp_listar_servicios_genericos()
 RETURNS TABLE (
-    ser_codigo INT,      -- Usamos nombres de columna nativos para facilitar el mapeo
+    id INTEGER,
     nombre VARCHAR,
     descripcion VARCHAR,
-    costo NUMERIC,
-    millas INTEGER,      -- Nuevo campo vital
-    tipo VARCHAR
-) AS $$
+    precio NUMERIC,
+    tipo VARCHAR,
+    millas INTEGER,
+    precio_con_descuento NUMERIC -- Nuevo
+) 
+LANGUAGE plpgsql
+AS $$
 BEGIN
-    RETURN QUERY 
+    RETURN QUERY
     SELECT 
-        s.ser_codigo, 
-        s.ser_nombre, 
-        s.ser_descripcion, 
-        s.ser_costo, 
-        COALESCE(s.ser_millas_otorgadas, 0), -- Asegurar que no venga NULL
-        s.ser_tipo
+        s.ser_codigo,
+        s.ser_nombre,
+        s.ser_descripcion,
+        s.ser_costo,
+        'servicio'::VARCHAR,
+        COALESCE(s.ser_millas_otorgadas, 0),
+        -- Cálculo de descuento
+        ROUND(s.ser_costo - (s.ser_costo * COALESCE((
+            SELECT MAX(p.prom_descuento) 
+            FROM ser_prom sp 
+            JOIN promocion p ON sp.fk_prom_codigo = p.prom_codigo 
+            WHERE sp.fk_ser_codigo = s.ser_codigo AND p.prom_fecha_hora_vencimiento > NOW()
+        ), 0) / 100), 2)
     FROM servicio s
-    WHERE s.ser_fecha_hora_inicio > NOW();
+    WHERE s.ser_tipo NOT IN ('Hotel', 'Restaurante')
+      AND s.ser_fecha_hora_inicio > NOW(); -- Solo futuros
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 CREATE OR REPLACE PROCEDURE public.sp_asignar_servicio_generico(
 	IN _id_paquete integer,
@@ -1647,28 +1658,41 @@ DROP FUNCTION IF EXISTS sp_listar_traslados_disponibles();
 
 CREATE OR REPLACE FUNCTION sp_listar_traslados_disponibles()
 RETURNS TABLE (
-    tras_codigo INT,
-    descripcion TEXT,
-    fecha TEXT,
-    costo NUMERIC,
-    millas INTEGER -- Nuevo campo vital
-) AS $$
+    id INTEGER,
+    nombre VARCHAR,
+    descripcion VARCHAR,
+    precio NUMERIC,
+    tipo VARCHAR,
+    millas INTEGER,
+    precio_con_descuento NUMERIC
+) 
+LANGUAGE plpgsql
+AS $$
 BEGIN
-    RETURN QUERY 
+    RETURN QUERY
     SELECT 
-        t.tras_codigo, 
-        (mt.med_tra_tipo || ' - ' || term_o.ter_nombre || ' -> ' || term_d.ter_nombre)::TEXT,
-        TO_CHAR(t.tras_fecha_hora_inicio, 'DD/MM/YYYY HH24:MI'),
+        t.tras_codigo,
+        -- BLINDAJE: Usamos COALESCE para evitar que un nulo borre todo el string
+        (COALESCE(ter_o.ter_nombre, 'Origen?') || ' -> ' || COALESCE(ter_d.ter_nombre, 'Destino?'))::VARCHAR,
+        (r.rut_tipo || ' | ' || TO_CHAR(t.tras_fecha_hora_inicio, 'DD/MM HH24:MI'))::VARCHAR,
         r.rut_costo,
-        COALESCE(r.rut_millas_otorgadas, 0)
+        'traslado'::VARCHAR,
+        COALESCE(r.rut_millas_otorgadas, 0),
+        ROUND(r.rut_costo - (r.rut_costo * COALESCE((
+            SELECT MAX(p.prom_descuento) 
+            FROM tras_prom tp 
+            JOIN promocion p ON tp.fk_prom_codigo = p.prom_codigo 
+            WHERE tp.fk_tras_codigo = t.tras_codigo 
+              AND p.prom_fecha_hora_vencimiento > NOW()
+        ), 0) / 100), 2)
     FROM traslado t
     JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo
-    JOIN terminal term_o ON r.fk_terminal_origen = term_o.ter_codigo
-    JOIN terminal term_d ON r.fk_terminal_destino = term_d.ter_codigo
-    JOIN medio_transporte mt ON t.fk_med_tra_codigo = mt.med_tra_codigo
+    -- CAMBIO A LEFT JOIN para no perder traslados si la ruta tiene datos incompletos
+    LEFT JOIN terminal ter_o ON r.fk_terminal_origen = ter_o.ter_codigo
+    LEFT JOIN terminal ter_d ON r.fk_terminal_destino = ter_d.ter_codigo
     WHERE t.tras_fecha_hora_inicio > NOW();
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- 2. NUEVO: Eliminar elemento del paquete
 CREATE OR REPLACE PROCEDURE sp_eliminar_elemento_paquete(
@@ -1810,32 +1834,56 @@ $$;
 
 
 CREATE OR REPLACE PROCEDURE sp_obtener_paquetes_turisticos(
-    OUT o_cursor REFCURSOR,
-    OUT o_status_code INTEGER,
-    OUT o_mensaje VARCHAR
+    IN p_destino INTEGER DEFAULT NULL,
+    IN p_fecha_inicio DATE DEFAULT NULL,
+    IN p_duracion INTEGER DEFAULT NULL,
+    INOUT o_cursor REFCURSOR DEFAULT 'cursor_paquetes',
+    INOUT o_status_code INTEGER DEFAULT 200,
+    INOUT o_mensaje VARCHAR DEFAULT ''
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    -- Abrimos el cursor con todos los datos
     OPEN o_cursor FOR
-        SELECT 
-            paq_tur_codigo,
-            paq_tur_nombre,
-            paq_tur_monto_total,
-            paq_tur_monto_subtotal,
-            paq_tur_costo_en_millas
-        FROM paquete_turistico
-        ORDER BY paq_tur_codigo DESC; -- Ordenados del más nuevo al más viejo
+    SELECT 
+        -- === IDENTIFICADORES (Doble Alias) ===
+        p.paq_tur_codigo AS id,                -- Para el Nuevo Cart
+        p.paq_tur_codigo AS paq_tur_codigo,    -- Para el Admin Panel (ESTO ARREGLA EL NOMBRE Y EL LINK)
+
+        -- === NOMBRES (Doble Alias) ===
+        p.paq_tur_nombre AS nombre,            -- Para el Nuevo Cart
+        p.paq_tur_nombre AS paq_tur_nombre,    -- Para el Admin Panel
+
+        -- === DESCRIPCIÓN (Doble Alias) ===
+        p.paq_tur_descripcion AS descripcion,
+        p.paq_tur_descripcion AS paq_tur_descripcion,
+        
+        -- === PRECIOS (Triple Alias) ===
+        p.paq_tur_monto_total AS paq_tur_monto_total, -- Admin
+        p.paq_tur_monto_total AS costo,               -- Cart
+        p.paq_tur_monto_total AS precio,              -- Cart v2
+        
+        -- === TIPOS Y MILLAS ===
+        'paquete'::VARCHAR AS tipo,
+        COALESCE(p.paq_tur_costo_en_millas, 0) AS millas,
+        
+        -- === CÁLCULO DE DESCUENTO ===
+        ROUND(p.paq_tur_monto_total - (p.paq_tur_monto_total * COALESCE((
+            SELECT MAX(prom.prom_descuento) 
+            FROM paq_prom pp 
+            JOIN promocion prom ON pp.fk_prom_codigo = prom.prom_codigo 
+            WHERE pp.fk_paq_tur_codigo = p.paq_tur_codigo 
+              AND prom.prom_fecha_hora_vencimiento > NOW()
+        ), 0) / 100), 2) AS precio_con_descuento
+
+    FROM paquete_turistico p
+    WHERE 1=1; 
 
     o_status_code := 200;
-    o_mensaje := 'Paquetes obtenidos exitosamente';
-
-EXCEPTION
-    WHEN OTHERS THEN
-        o_status_code := 500;
-        o_mensaje := 'Error al obtener paquetes: ' || SQLERRM;
-        o_cursor := NULL;
+    o_mensaje := 'Paquetes obtenidos correctamente';
+EXCEPTION WHEN OTHERS THEN
+    o_status_code := 500;
+    o_mensaje := 'Error: ' || SQLERRM;
 END;
 $$;
 
@@ -2099,8 +2147,21 @@ DECLARE
     v_millas_ruta INTEGER;
     v_millas_servicio INTEGER;
     v_millas_paquete INTEGER;
+    v_es_componente_paquete BOOLEAN := FALSE;
 BEGIN
-    -- 1. CAMBIO: Calcular millas si es Traslado (Usando fk_traslado)
+    -- 0. PREVENCIÓN: Si es un componente interno de un paquete (tiene fk_paquete Y (fk_traslado o fk_servicio)),
+    --    generalmente NO queremos dar millas dobles (por el paquete y por el vuelo).
+    --    Asumiremos que las millas se ganan por el PAQUETE completo, no por sus partes individuales.
+    IF NEW.fk_paquete_turistico IS NOT NULL AND (NEW.fk_traslado IS NOT NULL OR NEW.fk_servicio IS NOT NULL) THEN
+        v_es_componente_paquete := TRUE;
+    END IF;
+
+    -- Si es componente interno, salimos y no damos millas (ya las dará el header del paquete)
+    IF v_es_componente_paquete THEN
+        RETURN NEW;
+    END IF;
+
+    -- 1. Calcular millas si es Traslado INDIVIDUAL
     IF NEW.fk_traslado IS NOT NULL THEN
         SELECT r.rut_millas_otorgadas INTO v_millas_ruta
         FROM traslado t
@@ -2109,25 +2170,31 @@ BEGIN
         
         v_millas_ganadas := COALESCE(v_millas_ruta, 0);
     
-    -- 2. Calcular millas si es Servicio
+    -- 2. Calcular millas si es Servicio INDIVIDUAL
     ELSIF NEW.fk_servicio IS NOT NULL THEN
         SELECT ser_millas_otorgadas INTO v_millas_servicio
         FROM servicio WHERE ser_codigo = NEW.fk_servicio;
+        
         v_millas_ganadas := COALESCE(v_millas_servicio, 0);
 
-    -- 3. Calcular millas si es Paquete
+    -- 3. Calcular millas si es Paquete (HEADER)
     ELSIF NEW.fk_paquete_turistico IS NOT NULL THEN
         SELECT paq_tur_costo_en_millas INTO v_millas_paquete 
         FROM paquete_turistico WHERE paq_tur_codigo = NEW.fk_paquete_turistico;
+        
         v_millas_ganadas := COALESCE(v_millas_paquete, 0);
     END IF;
 
     -- 4. Actualizar Usuario y Registrar Historial
     IF v_millas_ganadas > 0 THEN
+        -- CRITICO: Usamos COALESCE(usu_total_millas, 0) para evitar que NULL + 100 = NULL
         UPDATE usuario 
-        SET usu_total_millas = usu_total_millas + v_millas_ganadas
+        SET usu_total_millas = COALESCE(usu_total_millas, 0) + v_millas_ganadas
         WHERE usu_codigo = (SELECT fk_usuario FROM compra WHERE com_codigo = NEW.fk_compra);
 
+        -- Insertamos en historial
+        -- Asegúrate de que esta estructura coincida con tu tabla 'milla' actual.
+        -- Si agregaste columnas nuevas (como mil_valor_restado), asegúrate que acepten NULL o tengan DEFAULT.
         INSERT INTO milla (mil_valor_obtenido, mil_fecha_inicio, fk_compra, fk_pago)
         VALUES (v_millas_ganadas, CURRENT_DATE, NEW.fk_compra, NULL); 
     END IF;
@@ -2136,13 +2203,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Recrear el Trigger (por si acaso se borró o desconectó)
+DROP TRIGGER IF EXISTS trg_otorgar_millas ON detalle_reserva;
 
-
-CREATE OR REPLACE TRIGGER trg_otorgar_millas
+CREATE TRIGGER trg_otorgar_millas
 AFTER INSERT ON detalle_reserva
 FOR EACH ROW
 EXECUTE FUNCTION fn_otorgar_millas_compra();
-
 -- ==============================================================================
 -- 3. STORED PROCEDURE MAESTRO: PROCESAR COMPRA (Checkout)
 -- ==============================================================================
@@ -2281,7 +2348,7 @@ CREATE OR REPLACE PROCEDURE sp_registrar_compra(
     IN i_usuario_id INTEGER,
     IN i_json_viajeros JSON,
     IN i_json_items JSON,
-    IN i_plan_financiamiento JSON, -- { "tipo": "contado"|"credito", "meses": N }
+    IN i_plan_financiamiento JSON, 
     OUT o_compra_id INTEGER,
     OUT o_total NUMERIC,
     OUT o_status INTEGER,
@@ -2295,6 +2362,7 @@ DECLARE
     v_viajero_json JSON;
     v_viajero_id INTEGER;
     v_costo_unitario NUMERIC;
+    v_descuento_pct NUMERIC; -- Variable para el descuento
     v_plan_fin_id INTEGER;
     v_monto_inicial NUMERIC;
     v_monto_financiar NUMERIC;
@@ -2315,19 +2383,47 @@ BEGIN
         
         FOR v_item IN SELECT * FROM json_to_recordset(i_json_items) AS x(tipo text, id int) LOOP
             v_costo_unitario := 0;
+            v_descuento_pct := 0;
+            
+            -- =================================================================================
+            -- LÓGICA DE PRECIOS Y DESCUENTOS (NUEVO BLOQUE)
+            -- =================================================================================
             
             IF v_item.tipo = 'servicio' THEN
                 SELECT ser_costo INTO v_costo_unitario FROM servicio WHERE ser_codigo = v_item.id;
+                
+                -- Buscar mejor descuento activo
+                SELECT COALESCE(MAX(p.prom_descuento), 0) INTO v_descuento_pct
+                FROM ser_prom sp JOIN promocion p ON sp.fk_prom_codigo = p.prom_codigo
+                WHERE sp.fk_ser_codigo = v_item.id AND p.prom_fecha_hora_vencimiento > NOW();
+
+                -- Aplicar descuento
+                v_costo_unitario := v_costo_unitario - (v_costo_unitario * v_descuento_pct / 100);
+
                 INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
                 VALUES ((SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva WHERE fk_compra = o_compra_id), CURRENT_DATE, CURRENT_TIME, COALESCE(v_costo_unitario, 0), 0, v_viajero_id, 1, o_compra_id, v_item.id, 'Confirmada');
 
             ELSIF v_item.tipo = 'traslado' THEN
                  SELECT r.rut_costo INTO v_costo_unitario FROM traslado t JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo WHERE t.tras_codigo = v_item.id;
+                 
+                 SELECT COALESCE(MAX(p.prom_descuento), 0) INTO v_descuento_pct
+                 FROM tras_prom tp JOIN promocion p ON tp.fk_prom_codigo = p.prom_codigo
+                 WHERE tp.fk_tras_codigo = v_item.id AND p.prom_fecha_hora_vencimiento > NOW();
+
+                 v_costo_unitario := v_costo_unitario - (v_costo_unitario * v_descuento_pct / 100);
+
                  INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_traslado, det_res_estado)
                  VALUES ((SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva WHERE fk_compra = o_compra_id), CURRENT_DATE, CURRENT_TIME, COALESCE(v_costo_unitario, 0), 0, v_viajero_id, 1, o_compra_id, v_item.id, 'Confirmada');
 
             ELSIF v_item.tipo = 'paquete' THEN
                  SELECT paq_tur_monto_total INTO v_costo_unitario FROM paquete_turistico WHERE paq_tur_codigo = v_item.id;
+                 
+                 SELECT COALESCE(MAX(p.prom_descuento), 0) INTO v_descuento_pct
+                 FROM paq_prom pp JOIN promocion p ON pp.fk_prom_codigo = p.prom_codigo
+                 WHERE pp.fk_paq_tur_codigo = v_item.id AND p.prom_fecha_hora_vencimiento > NOW();
+
+                 v_costo_unitario := v_costo_unitario - (v_costo_unitario * v_descuento_pct / 100);
+
                  INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_paquete_turistico, det_res_estado)
                  VALUES ((SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva WHERE fk_compra = o_compra_id), CURRENT_DATE, CURRENT_TIME, COALESCE(v_costo_unitario, 0), 0, v_viajero_id, 1, o_compra_id, v_item.id, 'Confirmada');
             END IF;
@@ -2340,40 +2436,30 @@ BEGIN
     UPDATE compra SET com_monto_total = v_total, com_monto_subtotal = v_total WHERE com_codigo = o_compra_id;
     o_total := v_total;
 
-    -- 3. Manejo de Financiamiento
+    -- 3. Manejo de Financiamiento (IGUAL QUE ANTES, pero usando el v_total ya descontado)
     IF (i_plan_financiamiento->>'tipo') = 'credito' THEN
-        
-        -- Lógica: 50% Inicial, 10% Interés
         v_monto_inicial := v_total * 0.50; 
         v_monto_financiar := v_total - v_monto_inicial;
         v_monto_interes := v_monto_financiar * 0.10; 
         v_total_con_interes := v_monto_financiar + v_monto_interes;
-        
         v_meses := COALESCE((i_plan_financiamiento->>'meses')::INTEGER, 3);
         v_cuota_mensual := v_total_con_interes / v_meses;
 
-        -- Crear Plan
         INSERT INTO plan_financiamiento (plan_fin_tasa_interes, plan_fin_numero_cuotas, plan_fin_inicial, fk_compra)
         VALUES (10.00, v_meses, v_monto_inicial, o_compra_id)
         RETURNING plan_fin_codigo INTO v_plan_fin_id;
 
         UPDATE compra SET fk_plan_financiamiento = v_plan_fin_id WHERE com_codigo = o_compra_id;
 
-        -- A. Generar CUOTA INICIAL (Fecha HOY)
-        -- NOTA: Eliminamos 'cuo_tipo'
         INSERT INTO cuota (cuo_monto, cuo_fecha_tope, fk_plan_financiamiento)
         VALUES (v_monto_inicial, CURRENT_DATE, v_plan_fin_id);
-        
         INSERT INTO cuo_est (fk_cuo_codigo, fk_est_codigo, cuo_est_fecha, cuo_est_fecha_fin)
         VALUES ((SELECT last_value FROM cuota_cuo_codigo_seq), 1, NOW(), 'infinity');
 
-        -- B. Generar CUOTAS MENSUALES (Fecha HOY + Meses)
         FOR i IN 1..v_meses LOOP
             v_fecha_pago := CURRENT_DATE + (i || ' month')::INTERVAL;
-            
             INSERT INTO cuota (cuo_monto, cuo_fecha_tope, fk_plan_financiamiento)
             VALUES (v_cuota_mensual, v_fecha_pago, v_plan_fin_id);
-            
             INSERT INTO cuo_est (fk_cuo_codigo, fk_est_codigo, cuo_est_fecha, cuo_est_fecha_fin)
             VALUES ((SELECT last_value FROM cuota_cuo_codigo_seq), 1, NOW(), 'infinity');
         END LOOP;
@@ -2542,14 +2628,18 @@ RETURNS TABLE (
     ubicacion VARCHAR,
     viajero_nombre VARCHAR,
     qr_data VARCHAR,
-    estado VARCHAR -- NUEVO CAMPO NECESARIO
+    estado VARCHAR,
+    fk_compra INTEGER,
+    det_res_codigo INTEGER,
+    reclamo_estado VARCHAR,    -- NUEVO
+    reclamo_respuesta VARCHAR  -- NUEVO
 ) AS $$
 BEGIN
     RETURN QUERY
     SELECT * FROM (
         -- 1. TRASLADOS
         SELECT 
-            ('TRS-' || dr.det_res_codigo)::VARCHAR,
+            ('TRS-' || dr.fk_compra || '-' || dr.det_res_codigo)::VARCHAR,
             'Traslado'::VARCHAR,
             (COALESCE(orig.ter_nombre, 'N/A') || ' ➝ ' || COALESCE(dest.ter_nombre, 'N/A'))::VARCHAR,
             (COALESCE(mt.med_tra_descripcion, 'Transporte') || ' (' || COALESCE(mt.med_tra_tipo, '-') || ')')::VARCHAR,
@@ -2558,8 +2648,12 @@ BEGIN
             t.tras_fecha_hora_fin,
             COALESCE(ld.lug_nombre, 'N/A')::VARCHAR,
             (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR,
-            ('TICKET:TRS:' || dr.det_res_codigo)::VARCHAR,
-            dr.det_res_estado::VARCHAR
+            ('TICKET:TRS:' || dr.fk_compra || ':' || dr.det_res_codigo)::VARCHAR,
+            dr.det_res_estado::VARCHAR,
+            dr.fk_compra,
+            dr.det_res_codigo,
+            rec.rec_estado,     -- Join con Reclamo
+            rec.rec_respuesta
         FROM detalle_reserva dr
         JOIN compra c ON dr.fk_compra = c.com_codigo
         JOIN traslado t ON dr.fk_traslado = t.tras_codigo
@@ -2569,16 +2663,16 @@ BEGIN
         LEFT JOIN terminal dest ON r.fk_terminal_destino = dest.ter_codigo
         LEFT JOIN lugar ld ON dest.fk_lugar = ld.lug_codigo
         JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
+        LEFT JOIN reclamo rec ON rec.fk_detalle_reserva = dr.fk_compra AND rec.fk_detalle_reserva_2 = dr.det_res_codigo
         WHERE c.fk_usuario = _usu_id 
           AND dr.fk_paquete_turistico IS NULL 
-          -- AHORA TRAEMOS TODO PARA FILTRAR EN FRONT
           AND dr.det_res_estado IN ('Confirmada', 'Completada', 'Cancelada')
 
         UNION ALL
 
         -- 2. SERVICIOS
         SELECT 
-            ('SRV-' || dr.det_res_codigo)::VARCHAR,
+            ('SRV-' || dr.fk_compra || '-' || dr.det_res_codigo)::VARCHAR,
             'Servicio'::VARCHAR,
             s.ser_nombre::VARCHAR,
             p.prov_nombre::VARCHAR,
@@ -2587,14 +2681,19 @@ BEGIN
             s.ser_fecha_hora_fin,
             l.lug_nombre::VARCHAR,
             (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR,
-            ('TICKET:SRV:' || dr.det_res_codigo || ':' || s.ser_codigo)::VARCHAR,
-            dr.det_res_estado::VARCHAR
+            ('TICKET:SRV:' || dr.fk_compra || ':' || dr.det_res_codigo)::VARCHAR,
+            dr.det_res_estado::VARCHAR,
+            dr.fk_compra,
+            dr.det_res_codigo,
+            rec.rec_estado,
+            rec.rec_respuesta
         FROM detalle_reserva dr
         JOIN compra c ON dr.fk_compra = c.com_codigo
         JOIN servicio s ON dr.fk_servicio = s.ser_codigo
         JOIN proveedor p ON s.fk_prov_codigo = p.prov_codigo
         JOIN lugar l ON p.fk_lugar = l.lug_codigo
         JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
+        LEFT JOIN reclamo rec ON rec.fk_detalle_reserva = dr.fk_compra AND rec.fk_detalle_reserva_2 = dr.det_res_codigo
         WHERE c.fk_usuario = _usu_id 
           AND dr.fk_paquete_turistico IS NULL
           AND dr.det_res_estado IN ('Confirmada', 'Completada', 'Cancelada')
@@ -2603,13 +2702,11 @@ BEGIN
 
         -- 3. PAQUETES
         SELECT 
-            ('PAQ-MAIN-' || dr.det_res_codigo)::VARCHAR,
+            ('PAQ-' || dr.fk_compra || '-' || dr.det_res_codigo)::VARCHAR,
             'Paquete Turístico'::VARCHAR,
             pq.paq_tur_nombre::VARCHAR,
             'Resumen del Paquete'::VARCHAR,
             'Ver detalles completos'::VARCHAR,
-            -- Para ordenar, intentamos buscar la fecha más próxima de sus componentes
-            -- (Subconsulta simplificada para el ORDER BY, idealmente se calcula mejor)
             COALESCE(
                 (SELECT MIN(ser_fecha_hora_inicio) FROM servicio s JOIN paq_ser ps ON s.ser_codigo = ps.fk_ser_codigo WHERE ps.fk_paq_tur_codigo = pq.paq_tur_codigo),
                 (SELECT MIN(tras_fecha_hora_inicio) FROM traslado tr JOIN paq_tras pt ON tr.tras_codigo = pt.fk_tras_codigo WHERE pt.fk_paq_tur_codigo = pq.paq_tur_codigo),
@@ -2618,12 +2715,17 @@ BEGIN
             NULL::TIMESTAMP,
             'Multi-Destino'::VARCHAR,
             (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR,
-            ('TICKET:MASTER:' || dr.det_res_codigo || ':' || pq.paq_tur_codigo)::VARCHAR,
-            dr.det_res_estado::VARCHAR
+            ('TICKET:PAQ:' || dr.fk_compra || ':' || dr.det_res_codigo)::VARCHAR,
+            dr.det_res_estado::VARCHAR,
+            dr.fk_compra,
+            dr.det_res_codigo,
+            rec.rec_estado,
+            rec.rec_respuesta
         FROM detalle_reserva dr
         JOIN compra c ON dr.fk_compra = c.com_codigo
         JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
         JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
+        LEFT JOIN reclamo rec ON rec.fk_detalle_reserva = dr.fk_compra AND rec.fk_detalle_reserva_2 = dr.det_res_codigo
         WHERE c.fk_usuario = _usu_id 
           AND dr.fk_servicio IS NULL AND dr.fk_traslado IS NULL
           AND dr.det_res_estado IN ('Confirmada', 'Completada', 'Cancelada')
@@ -2635,48 +2737,252 @@ $$ LANGUAGE plpgsql;
 
 
 
+CREATE OR REPLACE FUNCTION sp_registrar_reclamo(
+    p_ticket_id VARCHAR,
+    p_contenido VARCHAR
+)
+RETURNS JSON
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_compra_id INTEGER;
+    v_detalle_id INTEGER;
+    v_estado_reserva VARCHAR;
+    v_existe BOOLEAN;
+BEGIN
+    -- 1. Validar ID
+    IF SPLIT_PART(p_ticket_id, '-', 3) = '' THEN
+        RETURN json_build_object('status', 400, 'message', 'ID de ticket inválido');
+    END IF;
+
+    v_compra_id := SPLIT_PART(p_ticket_id, '-', 2)::INTEGER;
+    v_detalle_id := SPLIT_PART(p_ticket_id, '-', 3)::INTEGER;
+
+    -- 2. Validar Ticket
+    SELECT det_res_estado INTO v_estado_reserva
+    FROM detalle_reserva 
+    WHERE fk_compra = v_compra_id AND det_res_codigo = v_detalle_id;
+
+    IF v_estado_reserva IS NULL THEN
+        RETURN json_build_object('status', 404, 'message', 'Ticket no encontrado');
+    END IF;
+
+    IF v_estado_reserva <> 'Completada' THEN
+        RETURN json_build_object('status', 400, 'message', 'Solo puedes reclamar tickets usados (Completados).');
+    END IF;
+
+    -- 3. Evitar duplicados
+    SELECT EXISTS(SELECT 1 FROM reclamo WHERE fk_detalle_reserva = v_compra_id AND fk_detalle_reserva_2 = v_detalle_id) INTO v_existe;
+    IF v_existe THEN
+        RETURN json_build_object('status', 409, 'message', 'Ya tienes un reclamo abierto para este ticket.');
+    END IF;
+
+    -- 4. Insertar
+    INSERT INTO reclamo (rec_contenido, rec_fecha_hora, fk_detalle_reserva, fk_detalle_reserva_2, rec_estado)
+    VALUES (p_contenido, NOW(), v_compra_id, v_detalle_id, 'Abierto');
+
+    RETURN json_build_object('status', 200, 'message', 'Reclamo registrado. Un agente lo revisará pronto.');
+EXCEPTION WHEN OTHERS THEN
+    RETURN json_build_object('status', 500, 'message', 'Error BD: ' || SQLERRM);
+END;
+$$;
 
 
---AAA
-CREATE OR REPLACE PROCEDURE sp_marcar_ticket_usado(
-    IN i_ticket_id VARCHAR, -- Formato 'TRS-123' o 'SRV-456'
+CREATE OR REPLACE FUNCTION sp_listar_reclamos_admin()
+RETURNS TABLE (
+    id_reclamo INTEGER,
+    fecha TIMESTAMP,
+    estado VARCHAR,
+    cliente VARCHAR,
+    producto VARCHAR,
+    contenido VARCHAR,
+    respuesta VARCHAR,
+    ticket_ref VARCHAR,
+    precio_ticket NUMERIC
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        r.rec_codigo,
+        r.rec_fecha_hora,
+        r.rec_estado,
+        u.usu_nombre_usuario::VARCHAR,
+        COALESCE(s.ser_nombre, t_orig.ter_nombre || '->' || t_dest.ter_nombre, pq.paq_tur_nombre)::VARCHAR,
+        r.rec_contenido,
+        r.rec_respuesta,
+        (CASE 
+            WHEN dr.fk_servicio IS NOT NULL THEN 'SRV'
+            WHEN dr.fk_traslado IS NOT NULL THEN 'TRS'
+            ELSE 'PAQ' 
+         END || '-' || dr.fk_compra || '-' || dr.det_res_codigo)::VARCHAR,
+         dr.det_res_monto_total
+    FROM reclamo r
+    JOIN detalle_reserva dr ON r.fk_detalle_reserva = dr.fk_compra AND r.fk_detalle_reserva_2 = dr.det_res_codigo
+    JOIN compra c ON dr.fk_compra = c.com_codigo
+    JOIN usuario u ON c.fk_usuario = u.usu_codigo
+    -- Joins para nombres
+    LEFT JOIN servicio s ON dr.fk_servicio = s.ser_codigo
+    LEFT JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
+    LEFT JOIN traslado tr ON dr.fk_traslado = tr.tras_codigo
+    LEFT JOIN ruta rut ON tr.fk_rut_codigo = rut.rut_codigo
+    LEFT JOIN terminal t_orig ON rut.fk_terminal_origen = t_orig.ter_codigo
+    LEFT JOIN terminal t_dest ON rut.fk_terminal_destino = t_dest.ter_codigo
+    ORDER BY r.rec_fecha_hora DESC;
+END;
+$$;
+
+
+CREATE OR REPLACE PROCEDURE sp_responder_reclamo_con_reembolso(
+    IN i_reclamo_id INTEGER,
+    IN i_respuesta TEXT,
+    IN i_aplicar_reembolso BOOLEAN,
     OUT o_status INTEGER,
     OUT o_mensaje TEXT
 )
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    v_det_res_codigo INTEGER;
+    v_compra_id INTEGER;
+    v_detalle_id INTEGER;
+    v_monto_ticket_usd NUMERIC;
+    v_monto_a_devolver_usd NUMERIC;
+    v_penalizacion_usd NUMERIC;
+    
+    -- Variables de Pago
+    v_last_pago RECORD;
+    v_nuevo_pago_id INTEGER;
+    v_nuevo_metodo_id INTEGER;
+    v_tasa_valor NUMERIC;
+    v_monto_final_local NUMERIC;
+    v_retencion_final_local NUMERIC;
     v_estado_actual VARCHAR;
 BEGIN
-    -- Extraer ID numérico del string (ej: 'TRS-55' -> 55)
-    v_det_res_codigo := SPLIT_PART(i_ticket_id, '-', 2)::INTEGER;
+    -- 1. Obtener datos del reclamo
+    SELECT fk_detalle_reserva, fk_detalle_reserva_2, rec_estado 
+    INTO v_compra_id, v_detalle_id, v_estado_actual
+    FROM reclamo WHERE rec_codigo = i_reclamo_id;
 
-    -- Verificar estado actual
+    IF v_compra_id IS NULL THEN o_status := 404; o_mensaje := 'Reclamo no encontrado'; RETURN; END IF;
+    IF v_estado_actual = 'Cerrado' THEN o_status := 400; o_mensaje := 'El reclamo ya está cerrado'; RETURN; END IF;
+
+    -- 2. Si hay reembolso, calcular montos
+    IF i_aplicar_reembolso THEN
+        -- Obtener costo del ticket específico
+        SELECT det_res_monto_total INTO v_monto_ticket_usd
+        FROM detalle_reserva 
+        WHERE fk_compra = v_compra_id AND det_res_codigo = v_detalle_id;
+
+        -- Regla de Negocio: 10% Penalización, 90% Devolución
+        v_penalizacion_usd := v_monto_ticket_usd * 0.10;
+        v_monto_a_devolver_usd := v_monto_ticket_usd - v_penalizacion_usd;
+
+        -- Buscar último pago para obtener método y tasa
+        SELECT * INTO v_last_pago FROM pago WHERE fk_compra = v_compra_id ORDER BY pag_fecha_hora DESC LIMIT 1;
+
+        IF v_last_pago IS NULL THEN
+            o_status := 400; o_mensaje := 'No se puede reembolsar: No hay pagos registrados en la compra origen.'; RETURN;
+        END IF;
+
+        -- Conversión a moneda del pago original
+        SELECT tas_cam_tasa_valor INTO v_tasa_valor FROM tasa_de_cambio WHERE tas_cam_codigo = v_last_pago.fk_tasa_de_cambio;
+        
+        v_monto_final_local := v_monto_a_devolver_usd * v_tasa_valor;
+        v_retencion_final_local := v_penalizacion_usd * v_tasa_valor;
+
+        -- Registrar Pago Negativo (Salida de dinero)
+        INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo)
+        SELECT 'Reembolso por Reclamo #' || i_reclamo_id, fk_tipo_metodo FROM metodo_pago WHERE met_pag_codigo = v_last_pago.fk_metodo_pago
+        RETURNING met_pag_codigo INTO v_nuevo_metodo_id;
+
+        INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago)
+        VALUES ((v_monto_final_local * -1), NOW(), v_last_pago.pag_denominacion, v_compra_id, v_last_pago.fk_tasa_de_cambio, v_nuevo_metodo_id)
+        RETURNING pag_codigo INTO v_nuevo_pago_id;
+
+        INSERT INTO reembolso (rem_monto_reembolsado, rem_monto_retenido, rem_fecha, fk_pago)
+        VALUES (v_monto_final_local, v_retencion_final_local, CURRENT_DATE, v_nuevo_pago_id);
+    END IF;
+
+    -- 3. Cerrar Reclamo
+    UPDATE reclamo 
+    SET rec_respuesta = i_respuesta, 
+        rec_estado = 'Cerrado' 
+    WHERE rec_codigo = i_reclamo_id;
+
+    o_status := 200; 
+    IF i_aplicar_reembolso THEN
+        o_mensaje := 'Reclamo cerrado y reembolso de $' || ROUND(v_monto_a_devolver_usd, 2) || ' generado.';
+    ELSE
+        o_mensaje := 'Reclamo cerrado exitosamente.';
+    END IF;
+
+EXCEPTION WHEN OTHERS THEN
+    o_status := 500; o_mensaje := 'Error BD: ' || SQLERRM;
+END;
+$$;
+
+
+
+
+
+--AAA
+CREATE OR REPLACE PROCEDURE sp_marcar_ticket_usado(
+    IN i_ticket_id VARCHAR, -- Nuevo Formato: 'TIPO-COMPRA-DETALLE' (Ej: 'SRV-105-1')
+    OUT o_status INTEGER,
+    OUT o_mensaje TEXT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_compra_id INTEGER;
+    v_detalle_id INTEGER;
+    v_estado_actual VARCHAR;
+BEGIN
+    -- 1. Validar formato mínimo
+    IF SPLIT_PART(i_ticket_id, '-', 3) = '' THEN
+        o_status := 400; 
+        o_mensaje := 'Formato de ticket inválido. Se requiere TIPO-COMPRA-DETALLE'; 
+        RETURN;
+    END IF;
+
+    -- 2. Extraer IDs (Ahora necesitamos dos partes)
+    -- Parte 2: ID de la Compra
+    v_compra_id := SPLIT_PART(i_ticket_id, '-', 2)::INTEGER;
+    -- Parte 3: ID del Detalle
+    v_detalle_id := SPLIT_PART(i_ticket_id, '-', 3)::INTEGER;
+
+    -- 3. Verificar estado actual (Usando AMBAS llaves)
     SELECT det_res_estado INTO v_estado_actual 
-    FROM detalle_reserva WHERE det_res_codigo = v_det_res_codigo;
+    FROM detalle_reserva 
+    WHERE fk_compra = v_compra_id 
+      AND det_res_codigo = v_detalle_id;
 
+    -- Validaciones
     IF v_estado_actual IS NULL THEN
-        o_status := 404; o_mensaje := 'Ticket no encontrado'; RETURN;
+        o_status := 404; o_mensaje := 'Ticket no encontrado en el sistema.'; RETURN;
     END IF;
 
     IF v_estado_actual = 'Cancelada' THEN
-        o_status := 400; o_mensaje := 'Ticket inválido (Cancelado).'; RETURN;
+        o_status := 400; o_mensaje := 'Ticket inválido (La reserva fue cancelada).'; RETURN;
     END IF;
 
     IF v_estado_actual = 'Completada' THEN
-        o_status := 200; o_mensaje := 'Ticket ya fue utilizado anteriormente.'; RETURN;
+        o_status := 200; o_mensaje := 'Este ticket ya fue utilizado anteriormente.'; RETURN;
     END IF;
 
-    -- Actualizar
+    -- 4. Actualizar (Usando AMBAS llaves para ser quirúrgico)
     UPDATE detalle_reserva 
     SET det_res_estado = 'Completada' 
-    WHERE det_res_codigo = v_det_res_codigo;
+    WHERE fk_compra = v_compra_id 
+      AND det_res_codigo = v_detalle_id;
 
     o_status := 200;
     o_mensaje := 'Ticket validado exitosamente. ¡Disfrute su viaje!';
+
 EXCEPTION WHEN OTHERS THEN
-    o_status := 500; o_mensaje := 'Error BD: ' || SQLERRM;
+    o_status := 500; 
+    o_mensaje := 'Error BD: ' || SQLERRM;
 END;
 $$;
 
@@ -2845,34 +3151,46 @@ CREATE OR REPLACE PROCEDURE sp_solicitar_reembolso(
 LANGUAGE plpgsql
 AS $$
 DECLARE
+    -- Variables Financieras
     v_total_viaje_usd NUMERIC;
     v_total_pagado_usd NUMERIC;
     v_penalizacion_usd NUMERIC;
     v_a_devolver_usd NUMERIC;
     
+    -- Variables de Pago
     v_last_pago RECORD;
     v_nuevo_pago_id INTEGER;
     v_nuevo_metodo_id INTEGER;
     v_metodo_descripcion TEXT;
     
+    -- Variables de Control
     v_estado_cancelado_id INTEGER;
     v_ya_paso BOOLEAN;
     v_paquete_iniciado BOOLEAN;
     
+    -- Variables de Conversión
     v_tasa_valor NUMERIC;
-    v_monto_final_registro NUMERIC; -- Monto a devolver en moneda local
-    v_retencion_final_registro NUMERIC; -- Penalización en moneda local
+    v_monto_final_registro NUMERIC; 
+    v_retencion_final_registro NUMERIC;
+    
+    -- VARIABLES PARA MILLAS
+    v_millas_ganadas INTEGER;
+    v_saldo_actual INTEGER;
+    v_usuario_id INTEGER;
 BEGIN
-    SELECT EXISTS (
-        SELECT 1 FROM detalle_reserva 
-        WHERE fk_compra = i_compra_id AND det_res_estado = 'Completada'
-    ) INTO v_ya_paso;
+    -- 1. OBTENER ID USUARIO (Necesario para validaciones)
+    SELECT fk_usuario INTO v_usuario_id FROM compra WHERE com_codigo = i_compra_id;
+    IF v_usuario_id IS NULL THEN o_status := 404; o_mensaje := 'Compra no encontrada'; RETURN; END IF;
 
-    IF v_ya_paso THEN 
-        o_status := 400; o_mensaje := 'No reembolsable: Uno o más tickets ya fueron utilizados.'; RETURN; 
-    END IF;
+    -- =================================================================================
+    -- VALIDACIONES PREVIAS (Bloquean el proceso antes de calcular dinero)
+    -- =================================================================================
 
-    -- B. VALIDAR FECHAS (Servicios y Traslados Individuales)
+    -- A. Ticket Usado
+    SELECT EXISTS (SELECT 1 FROM detalle_reserva WHERE fk_compra = i_compra_id AND det_res_estado = 'Completada') INTO v_ya_paso;
+    IF v_ya_paso THEN o_status := 400; o_mensaje := 'No reembolsable: Tickets ya utilizados.'; RETURN; END IF;
+
+    -- B. Fechas Vencidas (Servicios/Traslados)
     SELECT EXISTS (
         SELECT 1 FROM detalle_reserva dr
         LEFT JOIN servicio s ON dr.fk_servicio = s.ser_codigo
@@ -2880,94 +3198,80 @@ BEGIN
         WHERE dr.fk_compra = i_compra_id 
           AND (s.ser_fecha_hora_inicio < NOW() OR t.tras_fecha_hora_inicio < NOW())
     ) INTO v_ya_paso;
+    IF v_ya_paso THEN o_status := 400; o_mensaje := 'No reembolsable: Viaje ya iniciado.'; RETURN; END IF;
 
-    IF v_ya_paso THEN 
-        o_status := 400; o_mensaje := 'No reembolsable: El viaje incluye servicios ya iniciados.'; RETURN; 
-    END IF;
-
-    -- C. VALIDAR FECHAS (Paquetes Turísticos)
+    -- C. Fechas Vencidas (Paquetes)
     SELECT EXISTS (
-        SELECT 1 FROM detalle_reserva dr
-        JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
+        SELECT 1 FROM detalle_reserva dr JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
         WHERE dr.fk_compra = i_compra_id
           AND (
               EXISTS (SELECT 1 FROM paq_ser ps JOIN servicio s ON ps.fk_ser_codigo = s.ser_codigo WHERE ps.fk_paq_tur_codigo = pq.paq_tur_codigo AND s.ser_fecha_hora_inicio < NOW())
               OR
               EXISTS (SELECT 1 FROM paq_tras pt JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo WHERE pt.fk_paq_tur_codigo = pq.paq_tur_codigo AND t.tras_fecha_hora_inicio < NOW())
-              OR
-              EXISTS (SELECT 1 FROM reserva_de_habitacion rh WHERE rh.fk_paquete_turistico = pq.paq_tur_codigo AND rh.res_hab_fecha_hora_inicio < NOW())
-              OR
-              EXISTS (SELECT 1 FROM reserva_restaurante rr WHERE rr.fk_paquete_turistico = pq.paq_tur_codigo AND rr.res_rest_fecha_hora < NOW())
           )
     ) INTO v_paquete_iniciado;
+    IF v_paquete_iniciado THEN o_status := 400; o_mensaje := 'No reembolsable: Paquete ya iniciado.'; RETURN; END IF;
 
-    IF v_paquete_iniciado THEN 
-        o_status := 400; o_mensaje := 'No reembolsable: El paquete incluye actividades ya iniciadas.'; RETURN; 
+    -- D. VALIDAR SALDO DE MILLAS (NUEVO)
+    -- Verificamos si el usuario tiene suficientes millas para "devolver" las que ganó
+    SELECT COALESCE(SUM(mil_valor_obtenido), 0) INTO v_millas_ganadas
+    FROM milla 
+    WHERE fk_compra = i_compra_id; -- Sumamos lo que ganó originalmente con esta compra
+
+    IF v_millas_ganadas > 0 THEN
+        SELECT usu_total_millas INTO v_saldo_actual FROM usuario WHERE usu_codigo = v_usuario_id;
+        
+        IF v_saldo_actual < v_millas_ganadas THEN
+            o_status := 400; 
+            o_mensaje := 'No reembolsable: Ya has utilizado las millas ('|| v_millas_ganadas ||') generadas por esta compra.'; 
+            RETURN; -- Bloqueamos el reembolso aquí
+        END IF;
     END IF;
 
-    -- 2. CÁLCULOS FINANCIEROS (TODO EN USD PRIMERO)
+    -- =================================================================================
+    -- 2. CÁLCULOS FINANCIEROS
+    -- =================================================================================
     SELECT com_monto_total INTO v_total_viaje_usd FROM compra WHERE com_codigo = i_compra_id;
     
-    -- Sumar pagos normalizados a USD
     SELECT COALESCE(SUM(p.pag_monto / tc.tas_cam_tasa_valor), 0) 
     INTO v_total_pagado_usd 
     FROM pago p
     JOIN tasa_de_cambio tc ON p.fk_tasa_de_cambio = tc.tas_cam_codigo
     WHERE p.fk_compra = i_compra_id;
 
-    IF v_total_viaje_usd IS NULL THEN o_status := 404; o_mensaje := 'Compra no encontrada'; RETURN; END IF;
-
-    -- Penalización del 10% en USD
     v_penalizacion_usd := v_total_viaje_usd * 0.10;
-    
-    -- Monto a devolver en USD
     v_a_devolver_usd := v_total_pagado_usd - v_penalizacion_usd;
 
     IF v_a_devolver_usd < 0 THEN v_a_devolver_usd := 0; END IF;
 
-    -- 3. OBTENER DATOS DEL ÚLTIMO PAGO (PARA EL REBOTE)
+    -- 3. OBTENER DATOS PARA REBOTE
     SELECT * INTO v_last_pago FROM pago WHERE fk_compra = i_compra_id ORDER BY pag_fecha_hora DESC LIMIT 1;
     
     IF v_last_pago IS NULL THEN 
-        -- Cancelación sin pagos previos
+        -- Cancelación simple si no hubo pagos (Millas igual se reversan abajo si hubiese)
         UPDATE detalle_reserva SET det_res_estado = 'Cancelada' WHERE fk_compra = i_compra_id;
-        o_status := 200; o_mensaje := 'Cancelado sin reembolso (sin pagos).'; 
-        RETURN; 
-    END IF;
+        v_nuevo_pago_id := NULL; -- No hay pago negativo
+    ELSE
+        -- 4. CONVERSIÓN A MONEDA LOCAL
+        SELECT tas_cam_tasa_valor INTO v_tasa_valor FROM tasa_de_cambio WHERE tas_cam_codigo = v_last_pago.fk_tasa_de_cambio;
+        v_monto_final_registro := v_a_devolver_usd * v_tasa_valor;
+        v_retencion_final_registro := v_penalizacion_usd * v_tasa_valor;
 
-    -- 4. CONVERSIÓN A MONEDA LOCAL (CORREGIDO)
-    -- Obtenemos la tasa exacta que se usó en ese pago (o la vigente, aquí usamos la del pago para consistencia)
-    SELECT tas_cam_tasa_valor INTO v_tasa_valor 
-    FROM tasa_de_cambio WHERE tas_cam_codigo = v_last_pago.fk_tasa_de_cambio;
+        -- 5. REGISTRAR PAGO NEGATIVO
+        IF v_monto_final_registro > 0 THEN
+            SELECT ('Reembolso ref. Pago #' || v_last_pago.pag_codigo) INTO v_metodo_descripcion;
+            
+            INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo)
+            SELECT v_metodo_descripcion, fk_tipo_metodo FROM metodo_pago WHERE met_pag_codigo = v_last_pago.fk_metodo_pago
+            RETURNING met_pag_codigo INTO v_nuevo_metodo_id;
 
-    -- AQUI ESTABA EL ERROR ANTES: Ahora multiplicamos AMBOS valores por la tasa
-    v_monto_final_registro := v_a_devolver_usd * v_tasa_valor;     -- Devolución en BS/EUR
-    v_retencion_final_registro := v_penalizacion_usd * v_tasa_valor; -- Penalización en BS/EUR
+            INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago)
+            VALUES ((v_monto_final_registro * -1), NOW(), v_last_pago.pag_denominacion, i_compra_id, v_last_pago.fk_tasa_de_cambio, v_nuevo_metodo_id)
+            RETURNING pag_codigo INTO v_nuevo_pago_id;
 
-    -- 5. REGISTRAR PAGO NEGATIVO (REVERSO)
-    IF v_monto_final_registro > 0 THEN
-        SELECT ('Reembolso ref. Pago #' || v_last_pago.pag_codigo) INTO v_metodo_descripcion;
-        
-        INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo)
-        SELECT v_metodo_descripcion, fk_tipo_metodo FROM metodo_pago WHERE met_pag_codigo = v_last_pago.fk_metodo_pago
-        RETURNING met_pag_codigo INTO v_nuevo_metodo_id;
-
-        INSERT INTO pago (
-            pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago
-        )
-        VALUES (
-            (v_monto_final_registro * -1), -- Negativo en moneda local
-            NOW(), 
-            v_last_pago.pag_denominacion, 
-            i_compra_id, 
-            v_last_pago.fk_tasa_de_cambio, 
-            v_nuevo_metodo_id
-        )
-        RETURNING pag_codigo INTO v_nuevo_pago_id;
-
-        -- INSERTAR REEMBOLSO (Con los valores convertidos correctamente)
-        INSERT INTO reembolso (rem_monto_reembolsado, rem_monto_retenido, rem_fecha, fk_pago)
-        VALUES (v_monto_final_registro, v_retencion_final_registro, CURRENT_DATE, v_nuevo_pago_id);
+            INSERT INTO reembolso (rem_monto_reembolsado, rem_monto_retenido, rem_fecha, fk_pago)
+            VALUES (v_monto_final_registro, v_retencion_final_registro, CURRENT_DATE, v_nuevo_pago_id);
+        END IF;
     END IF;
 
     -- 6. GESTIÓN DE ESTADOS (CANCELACIÓN)
@@ -2985,9 +3289,37 @@ BEGIN
     WHERE pf.fk_compra = i_compra_id
       AND NOT EXISTS (SELECT 1 FROM cuo_est x JOIN estado e ON x.fk_est_codigo = e.est_codigo WHERE x.fk_cuo_codigo = c.cuo_codigo AND e.est_nombre = 'Pagado');
 
+    -- =================================================================================
+    -- 7. REVERSIÓN DE MILLAS (EJECUCIÓN)
+    -- =================================================================================
+    IF v_millas_ganadas > 0 THEN
+        -- A. Restar del saldo del usuario
+        UPDATE usuario 
+        SET usu_total_millas = usu_total_millas - v_millas_ganadas
+        WHERE usu_codigo = v_usuario_id;
+
+        -- B. Registrar Egreso en tabla 'milla' con la nueva estructura
+        INSERT INTO milla (
+            mil_valor_obtenido, 
+            mil_fecha_inicio, 
+            mil_fecha_fin,
+            mil_valor_restado,  -- Columna correcta para egresos
+            fk_compra,          -- NULO según requerimiento
+            fk_pago             -- Vinculado al pago de reembolso (si existe)
+        )
+        VALUES (
+            NULL, 
+            CURRENT_DATE, 
+            NULL,
+            v_millas_ganadas, 
+            NULL, 
+            v_nuevo_pago_id
+        );
+    END IF;
+
     o_monto_reembolsado := v_monto_final_registro;
     o_status := 200;
-    o_mensaje := 'Reembolso procesado correctamente en ' || v_last_pago.pag_denominacion;
+    o_mensaje := 'Reembolso procesado. Millas descontadas: ' || COALESCE(v_millas_ganadas, 0);
 
 EXCEPTION WHEN OTHERS THEN
     o_status := 500; o_mensaje := 'Error CRITICO: ' || SQLERRM;
@@ -4164,3 +4496,426 @@ $$;
 
 
 
+
+--STORE PROCEDURE PARA MOSTRAR LA WISHLIST FILTRADA POR TIPO DE PRODUCTO O TODOS BY MELANIE
+CREATE OR REPLACE FUNCTION mostrar_wishlist_filtrada(p_usu_codigo INTEGER, p_filtro TEXT)
+RETURNS TABLE (
+    tipo_producto TEXT,
+    codigo_producto INTEGER,
+    nombre_producto TEXT,
+    descripcion_producto TEXT,
+    precio_original NUMERIC,
+    fecha_inicio TIMESTAMP,
+    porcentaje_descuento NUMERIC,
+    precio_final NUMERIC,
+    millas INTEGER -- <--- NUEVA COLUMNA
+) 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        res.tipo_producto,
+        res.codigo_producto,
+        res.nombre_producto,
+        res.descripcion_producto,
+        res.precio_original,
+        res.fecha_inicio,
+        res.porcentaje_descuento,
+        ROUND(res.precio_original - (res.precio_original * res.porcentaje_descuento / 100), 2) AS precio_final,
+        res.millas -- <--- Retornamos las millas
+    FROM (
+        -- Bloque PAQUETES
+        SELECT 
+            'PAQUETE'::TEXT AS tipo_producto, 
+            p.paq_tur_codigo AS codigo_producto, 
+            p.paq_tur_nombre::TEXT AS nombre_producto, 
+            COALESCE(p.paq_tur_descripcion, 'Sin descripción')::TEXT AS descripcion_producto, 
+            COALESCE(p.paq_tur_monto_total, 0)::NUMERIC AS precio_original,
+            -- Fecha
+            (SELECT MIN(inicio) FROM (
+                SELECT s.ser_fecha_hora_inicio AS inicio FROM paq_ser ps JOIN servicio s ON ps.fk_ser_codigo = s.ser_codigo WHERE ps.fk_paq_tur_codigo = p.paq_tur_codigo
+                UNION ALL
+                SELECT t.tras_fecha_hora_inicio AS inicio FROM paq_tras pt JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo WHERE pt.fk_paq_tur_codigo = p.paq_tur_codigo
+            ) as fechas) AS fecha_inicio,
+            -- Descuento
+            COALESCE((SELECT MAX(prom.prom_descuento) FROM paq_prom pp JOIN promocion prom ON pp.fk_prom_codigo = prom.prom_codigo WHERE pp.fk_paq_tur_codigo = p.paq_tur_codigo AND prom.prom_fecha_hora_vencimiento > NOW()), 0)::NUMERIC AS porcentaje_descuento,
+            -- Millas
+            COALESCE(p.paq_tur_costo_en_millas, 0) AS millas 
+        FROM lista_deseos ld
+        JOIN paquete_turistico p ON ld.fk_paquete_turistico = p.paq_tur_codigo
+        WHERE ld.fk_usuario = p_usu_codigo
+
+        UNION ALL
+
+        -- Bloque SERVICIOS
+        SELECT 
+            'SERVICIO'::TEXT, 
+            s.ser_codigo, 
+            s.ser_nombre::TEXT, 
+            COALESCE(s.ser_descripcion, 'Sin descripción')::TEXT, 
+            COALESCE(s.ser_costo, 0)::NUMERIC,
+            s.ser_fecha_hora_inicio,
+            COALESCE((SELECT MAX(prom.prom_descuento) FROM ser_prom sp JOIN promocion prom ON sp.fk_prom_codigo = prom.prom_codigo WHERE sp.fk_ser_codigo = s.ser_codigo AND prom.prom_fecha_hora_vencimiento > NOW()), 0)::NUMERIC,
+            -- Millas
+            COALESCE(s.ser_millas_otorgadas, 0)
+        FROM lista_deseos ld
+        JOIN servicio s ON ld.fk_servicio = s.ser_codigo
+        WHERE ld.fk_usuario = p_usu_codigo
+
+        UNION ALL
+
+        -- Bloque TRASLADOS
+        SELECT 
+            'TRASLADO'::TEXT, 
+            t.tras_codigo, 
+            (COALESCE(ter_o.ter_nombre, 'Origen') || ' -> ' || COALESCE(ter_d.ter_nombre, 'Destino'))::TEXT, 
+            (COALESCE(r.rut_tipo, 'Transporte') || ' | ' || TO_CHAR(t.tras_fecha_hora_inicio, 'DD/MM HH24:MI'))::TEXT,
+            COALESCE(r.rut_costo, 0)::NUMERIC,
+            t.tras_fecha_hora_inicio,
+            COALESCE((SELECT MAX(prom.prom_descuento) FROM tras_prom tp JOIN promocion prom ON tp.fk_prom_codigo = prom.prom_codigo WHERE tp.fk_tras_codigo = t.tras_codigo AND prom.prom_fecha_hora_vencimiento > NOW()), 0)::NUMERIC,
+            -- Millas (Vienen de la RUTA)
+            COALESCE(r.rut_millas_otorgadas, 0)
+        FROM lista_deseos ld
+        JOIN traslado t ON ld.fk_traslado = t.tras_codigo
+        LEFT JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo
+        LEFT JOIN terminal ter_o ON r.fk_terminal_origen = ter_o.ter_codigo
+        LEFT JOIN terminal ter_d ON r.fk_terminal_destino = ter_d.ter_codigo
+        WHERE ld.fk_usuario = p_usu_codigo
+    ) AS res
+    WHERE UPPER(TRIM(p_filtro)) = 'TODO' OR UPPER(TRIM(res.tipo_producto)) = UPPER(TRIM(p_filtro));
+END;
+$$;
+
+--STORE PROCEDURE PARA ELIMINAR DE WISHLIST BY MELANIE
+CREATE OR REPLACE FUNCTION sp_eliminar_de_wishlist(
+    p_usuario_id INTEGER,
+    p_producto_id INTEGER,
+    p_tipo_producto VARCHAR
+)
+RETURNS VOID AS $$
+BEGIN
+    IF p_tipo_producto = 'SERVICIO' THEN
+        DELETE FROM lista_deseos 
+        WHERE fk_usuario = p_usuario_id AND fk_servicio = p_producto_id;
+
+    ELSIF p_tipo_producto = 'TRASLADO' THEN
+        DELETE FROM lista_deseos 
+        WHERE fk_usuario = p_usuario_id AND fk_traslado = p_producto_id;
+
+    ELSIF p_tipo_producto = 'PAQUETE' THEN
+        DELETE FROM lista_deseos 
+        WHERE fk_usuario = p_usuario_id AND fk_paquete_turistico = p_producto_id;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+--STORE PROCEDURE PARA AGREGAR A WISHLIST BY MELANIE
+CREATE OR REPLACE PROCEDURE sp_agregar_a_wishlist(
+    p_usu_codigo INTEGER,
+    p_producto_id INTEGER,
+    p_tipo_producto VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_existe BOOLEAN;
+    v_fecha_inicio TIMESTAMP;
+BEGIN
+    -- 1. VALIDAR DUPLICADOS
+    SELECT EXISTS (
+        SELECT 1 FROM lista_deseos ld
+        WHERE ld.fk_usuario = p_usu_codigo
+        AND (
+            (UPPER(p_tipo_producto) = 'SERVICIO' AND ld.fk_servicio = p_producto_id) OR
+            (UPPER(p_tipo_producto) = 'TRASLADO' AND ld.fk_traslado = p_producto_id) OR
+            (UPPER(p_tipo_producto) = 'PAQUETE' AND ld.fk_paquete_turistico = p_producto_id)
+        )
+    ) INTO v_existe;
+
+    IF v_existe THEN
+        -- Usamos RAISE EXCEPTION para que Node.js capture el error correctamente
+        RAISE EXCEPTION 'Este elemento ya se encuentra en tu lista de deseos.';
+    END IF;
+
+    -- 2. VALIDAR FECHAS
+    v_fecha_inicio := NULL;
+
+    IF UPPER(p_tipo_producto) = 'SERVICIO' THEN
+        SELECT ser_fecha_hora_inicio INTO v_fecha_inicio FROM servicio WHERE ser_codigo = p_producto_id;
+    ELSIF UPPER(p_tipo_producto) = 'TRASLADO' THEN
+        SELECT tras_fecha_hora_inicio INTO v_fecha_inicio FROM traslado WHERE tras_codigo = p_producto_id;
+    ELSIF UPPER(p_tipo_producto) = 'PAQUETE' THEN
+        SELECT MIN(fecha_inicio) INTO v_fecha_inicio
+        FROM (
+            SELECT s.ser_fecha_hora_inicio AS fecha_inicio FROM paq_ser ps JOIN servicio s ON ps.fk_ser_codigo = s.ser_codigo WHERE ps.fk_paq_tur_codigo = p_producto_id
+            UNION ALL
+            SELECT t.tras_fecha_hora_inicio AS fecha_inicio FROM paq_tras pt JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo WHERE pt.fk_paq_tur_codigo = p_producto_id
+        ) as comp;
+    END IF;
+
+    IF v_fecha_inicio IS NOT NULL AND v_fecha_inicio < NOW() THEN
+        RAISE EXCEPTION 'No puedes agregar actividades cuya fecha ya ha pasado.';
+    END IF;
+
+    -- 3. INSERTAR CON NULOS EXPLÍCITOS
+    IF UPPER(p_tipo_producto) = 'SERVICIO' THEN
+        INSERT INTO lista_deseos (fk_usuario, fk_servicio, fk_paquete_turistico, fk_traslado) 
+        VALUES (p_usu_codigo, p_producto_id, NULL, NULL);
+        
+    ELSIF UPPER(p_tipo_producto) = 'TRASLADO' THEN
+        INSERT INTO lista_deseos (fk_usuario, fk_traslado, fk_servicio, fk_paquete_turistico) 
+        VALUES (p_usu_codigo, p_producto_id, NULL, NULL);
+        
+    ELSIF UPPER(p_tipo_producto) = 'PAQUETE' THEN
+        INSERT INTO lista_deseos (fk_usuario, fk_paquete_turistico, fk_servicio, fk_traslado) 
+        VALUES (p_usu_codigo, p_producto_id, NULL, NULL);
+    ELSE
+        RAISE EXCEPTION 'Tipo de producto no válido: %', p_tipo_producto;
+    END IF;
+    
+    -- Si llegamos aquí, todo salió bien. No necesitamos retornar variables OUT, 
+    -- el commit implícito del driver se encargará.
+END;
+$$;
+
+-- 1. REGISTRAR RESEÑA (Usa el ID compuesto del ticket)
+DROP PROCEDURE IF EXISTS sp_registrar_resena; -- Borramos el viejo para evitar confusiones
+
+CREATE OR REPLACE FUNCTION sp_registrar_resena(
+    p_ticket_id VARCHAR, 
+    p_calificacion INTEGER,
+    p_descripcion VARCHAR
+)
+RETURNS JSON -- Retornamos un objeto JSON directo
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    v_compra_id INTEGER;
+    v_detalle_id INTEGER;
+    v_estado_actual VARCHAR;
+    v_existe BOOLEAN;
+BEGIN
+    -- 1. Validar formato
+    IF p_ticket_id IS NULL OR SPLIT_PART(p_ticket_id, '-', 3) = '' THEN
+        RETURN json_build_object('status', 400, 'message', 'ID de ticket inválido (Formato incorrecto)');
+    END IF;
+
+    -- 2. Desarmar ID
+    BEGIN
+        v_compra_id := SPLIT_PART(p_ticket_id, '-', 2)::INTEGER;
+        v_detalle_id := SPLIT_PART(p_ticket_id, '-', 3)::INTEGER;
+    EXCEPTION WHEN OTHERS THEN
+        RETURN json_build_object('status', 400, 'message', 'Error al procesar ID del ticket');
+    END;
+
+    -- 3. Validar Estado del Ticket
+    SELECT det_res_estado INTO v_estado_actual
+    FROM detalle_reserva
+    WHERE fk_compra = v_compra_id AND det_res_codigo = v_detalle_id;
+
+    IF v_estado_actual IS NULL THEN
+        RETURN json_build_object('status', 404, 'message', 'Ticket no encontrado en BD');
+    END IF;
+
+    IF v_estado_actual != 'Completada' THEN
+        RETURN json_build_object('status', 400, 'message', 'El ticket no está marcado como Completado');
+    END IF;
+
+    -- 4. Validar Duplicados
+    SELECT EXISTS (
+        SELECT 1 FROM resena 
+        WHERE fk_detalle_reserva = v_compra_id 
+          AND fk_detalle_reserva_2 = v_detalle_id
+    ) INTO v_existe;
+
+    IF v_existe THEN
+        RETURN json_build_object('status', 409, 'message', 'Ya existe una reseña para este ticket');
+    END IF;
+
+    -- 5. Insertar
+    -- NOTA IMPORTANTE: Verifica si tu columna en la BD se llama 'res_fecha_hora_creacion' (con T) 
+    -- o 'res_fecha_hora_creacion' (con R). Aquí uso la versión con 'T' según tu create.sql previo.
+    INSERT INTO resena (
+        res_calificacion_numerica, 
+        res_descripcion, 
+        res_fecha_hora_creacion, -- <--- CAMBIA ESTO SI CORREGISTE EL TYPO EN LA TABLA
+        fk_detalle_reserva,      
+        fk_detalle_reserva_2     
+    ) VALUES (
+        p_calificacion,
+        p_descripcion,
+        NOW(),
+        v_compra_id,
+        v_detalle_id
+    );
+
+    RETURN json_build_object('status', 200, 'message', 'Reseña guardada exitosamente');
+
+EXCEPTION WHEN OTHERS THEN
+    -- Aquí capturamos el error real de SQL y lo enviamos al front
+    RETURN json_build_object('status', 500, 'message', 'Error SQL: ' || SQLERRM);
+END;
+$$;
+
+-- 2. VER RESEÑAS DE UN PRODUCTO (Público)
+-- Sirve para Servicios, Traslados y Paquetes
+CREATE OR REPLACE FUNCTION sp_obtener_resenas_producto(
+    p_producto_id INTEGER,
+    p_tipo_producto VARCHAR -- 'SERVICIO', 'TRASLADO', 'PAQUETE'
+)
+RETURNS TABLE (
+    calificacion INTEGER,
+    comentario VARCHAR,
+    fecha TIMESTAMP,
+    autor VARCHAR,
+    viajero_nombre VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        r.res_calificacion_numerica,
+        r.res_descripcion,
+        r.res_fecha_hora_creacion,
+        u.usu_nombre_usuario::VARCHAR, -- Autor (quien compró)
+        (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR -- Viajero (quien usó el servicio)
+    FROM resena r
+    JOIN detalle_reserva dr ON r.fk_detalle_reserva = dr.fk_compra AND r.fk_detalle_reserva_2 = dr.det_res_codigo
+    JOIN compra c ON dr.fk_compra = c.com_codigo
+    JOIN usuario u ON c.fk_usuario = u.usu_codigo
+    JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
+    WHERE 
+        (UPPER(p_tipo_producto) = 'SERVICIO' AND dr.fk_servicio = p_producto_id) OR
+        (UPPER(p_tipo_producto) = 'TRASLADO' AND dr.fk_traslado = p_producto_id) OR
+        (UPPER(p_tipo_producto) = 'PAQUETE' AND dr.fk_paquete_turistico = p_producto_id)
+    ORDER BY r.res_fecha_hora_creacion DESC;
+END;
+$$;
+
+-- 3. VER MIS RESEÑAS (Dashboard Cliente)
+CREATE OR REPLACE FUNCTION sp_obtener_mis_resenas(p_usuario_id INTEGER)
+RETURNS TABLE (
+    res_id INTEGER,
+    calificacion INTEGER,
+    comentario VARCHAR,
+    fecha TIMESTAMP,
+    producto_nombre VARCHAR,
+    tipo_producto VARCHAR,
+    viajero VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        r.res_codigo,
+        r.res_calificacion_numerica,
+        r.res_descripcion,
+        r.res_fecha_hora_creacion,
+        -- Determinar nombre del producto
+        COALESCE(s.ser_nombre, pq.paq_tur_nombre, (t_orig.ter_nombre || ' -> ' || t_dest.ter_nombre))::VARCHAR,
+        -- Determinar tipo
+        CASE 
+            WHEN dr.fk_servicio IS NOT NULL THEN 'Servicio'
+            WHEN dr.fk_paquete_turistico IS NOT NULL THEN 'Paquete'
+            ELSE 'Traslado'
+        END::VARCHAR,
+        (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR
+    FROM resena r
+    JOIN detalle_reserva dr ON r.fk_detalle_reserva = dr.fk_compra AND r.fk_detalle_reserva_2 = dr.det_res_codigo
+    JOIN compra c ON dr.fk_compra = c.com_codigo
+    JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
+    -- Joins para nombres
+    LEFT JOIN servicio s ON dr.fk_servicio = s.ser_codigo
+    LEFT JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
+    LEFT JOIN traslado tr ON dr.fk_traslado = tr.tras_codigo
+    LEFT JOIN ruta rut ON tr.fk_rut_codigo = rut.rut_codigo
+    LEFT JOIN terminal t_orig ON rut.fk_terminal_origen = t_orig.ter_codigo
+    LEFT JOIN terminal t_dest ON rut.fk_terminal_destino = t_dest.ter_codigo
+    
+    WHERE c.fk_usuario = p_usuario_id
+    ORDER BY r.res_fecha_hora_creacion DESC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION sp_obtener_resenas_producto(
+    p_producto_id INTEGER,
+    p_tipo_producto VARCHAR -- 'SERVICIO', 'TRASLADO', 'PAQUETE'
+)
+RETURNS TABLE (
+    calificacion INTEGER,
+    comentario VARCHAR,
+    fecha TIMESTAMP,
+    autor VARCHAR,
+    viajero_nombre VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        r.res_calificacion_numerica,
+        r.res_descripcion,
+        r.res_fecha_hora_creacion,
+        u.usu_nombre_usuario::VARCHAR, -- Autor (quien compró)
+        (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR -- Viajero (quien usó el servicio)
+    FROM resena r
+    JOIN detalle_reserva dr ON r.fk_detalle_reserva = dr.fk_compra AND r.fk_detalle_reserva_2 = dr.det_res_codigo
+    JOIN compra c ON dr.fk_compra = c.com_codigo
+    JOIN usuario u ON c.fk_usuario = u.usu_codigo
+    JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
+    WHERE 
+        (UPPER(p_tipo_producto) = 'SERVICIO' AND dr.fk_servicio = p_producto_id) OR
+        (UPPER(p_tipo_producto) = 'TRASLADO' AND dr.fk_traslado = p_producto_id) OR
+        (UPPER(p_tipo_producto) = 'PAQUETE' AND dr.fk_paquete_turistico = p_producto_id)
+    ORDER BY r.res_fecha_hora_creacion DESC;
+END;
+$$;
+
+-- 3. VER MIS RESEÑAS (Dashboard Cliente)
+CREATE OR REPLACE FUNCTION sp_obtener_mis_resenas(p_usuario_id INTEGER)
+RETURNS TABLE (
+    res_id INTEGER,
+    calificacion INTEGER,
+    comentario VARCHAR,
+    fecha TIMESTAMP,
+    producto_nombre VARCHAR,
+    tipo_producto VARCHAR,
+    viajero VARCHAR
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        r.res_codigo,
+        r.res_calificacion_numerica,
+        r.res_descripcion,
+        r.res_fecha_hora_creacion,
+        -- Determinar nombre del producto
+        COALESCE(s.ser_nombre, pq.paq_tur_nombre, (t_orig.ter_nombre || ' -> ' || t_dest.ter_nombre))::VARCHAR,
+        -- Determinar tipo
+        CASE 
+            WHEN dr.fk_servicio IS NOT NULL THEN 'Servicio'
+            WHEN dr.fk_paquete_turistico IS NOT NULL THEN 'Paquete'
+            ELSE 'Traslado'
+        END::VARCHAR,
+        (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR
+    FROM resena r
+    JOIN detalle_reserva dr ON r.fk_detalle_reserva = dr.fk_compra AND r.fk_detalle_reserva_2 = dr.det_res_codigo
+    JOIN compra c ON dr.fk_compra = c.com_codigo
+    JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
+    -- Joins para nombres
+    LEFT JOIN servicio s ON dr.fk_servicio = s.ser_codigo
+    LEFT JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
+    LEFT JOIN traslado tr ON dr.fk_traslado = tr.tras_codigo
+    LEFT JOIN ruta rut ON tr.fk_rut_codigo = rut.rut_codigo
+    LEFT JOIN terminal t_orig ON rut.fk_terminal_origen = t_orig.ter_codigo
+    LEFT JOIN terminal t_dest ON rut.fk_terminal_destino = t_dest.ter_codigo
+    
+    WHERE c.fk_usuario = p_usuario_id
+    ORDER BY r.res_fecha_hora_creacion DESC;
+END;
+$$;

@@ -3,6 +3,8 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const cron = require('node-cron');
 
+const reviewsRoutes = require('./routes/reviewsRoutes');
+
 cron.schedule('0 0 * * *', async () => {
   console.log('⏳ Ejecutando proceso de Mora Diaria...');
   
@@ -29,7 +31,7 @@ const promocionRoutes = require('./routes/promocionRoutes');
 //Puede haber un controlador para aerolineas, cruceros, paquetes, servicios, etc
 
 const paqTurRoutes = require('./routes/paq_turRoutes'); 
-
+const claimsRoutes = require('./routes/claimsRoutes');
 const homRoutes = require('./routes/homeRoutes');
 
 const cartRoutes = require('./routes/cartRoutes')
@@ -38,6 +40,7 @@ const paymentRoutes = require('./routes/routesPayment');
 
 const reportRoutes = require('./routes/reportRoutes');
 const rolesRoutes = require('./routes/rolesRoutes');
+const wishlistRoutes = require('./routes/wishlistRoutes');
 
 
 
@@ -52,12 +55,15 @@ app.use('/api/report', reportRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/promociones', promocionRoutes);
 app.use('/api', rolesRoutes);
+app.use('/api/claims', claimsRoutes);
 
 
 app.use('/api/home',  homRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/payments', paymentRoutes);
 
+app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/reviews', reviewsRoutes); // Agregar esta línea
 
 
 // --- NUEVA LÍNEA: Usar rutas de paquetes ---

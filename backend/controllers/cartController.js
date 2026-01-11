@@ -3,57 +3,45 @@ const pool = require('../config/db');
 // Procesa el checkout (Validación + Compra)
 const processCheckout = async (req, res) => {
     const { user_id, viajeros, items, pago } = req.body;
-    // viajeros: [1, 2, 3]
-    // items: [{tipo: 'paquete', id: 1}, ...]
     
     const client = await pool.connect();
 
     try {
         await client.query('BEGIN');
 
-        // =================================================================
-        // PASO 1: VALIDACIÓN DE REGLAS DE NEGOCIO (NUEVO)
-        // =================================================================
-        // Verificamos edad, millas, ubicación, etc. antes de procesar nada.
-        
+        // PASO 1: VALIDACIÓN DE REGLAS
         const validQuery = `CALL sp_validar_reglas_compra($1, $2, $3, NULL, NULL)`;
         const validValues = [
             user_id,
-            JSON.stringify(items),    // Enviamos items como JSON
-            JSON.stringify(viajeros)  // Enviamos IDs viajeros como JSON
+            JSON.stringify(items),
+            JSON.stringify(viajeros)
         ];
 
         const validResult = await client.query(validQuery, validValues);
-        const validResp = validResult.rows[0]; // Postgres devuelve los OUT en rows[0]
+        const validResp = validResult.rows[0]; 
 
-        // Si la validación falla (o_valido = false), detenemos todo.
         if (validResp.o_valido === false) {
             await client.query('ROLLBACK');
             return res.status(409).json({ 
                 success: false, 
-                message: validResp.o_mensaje // Ej: "Error: El viajero Juan no tiene 18 años..."
+                message: validResp.o_mensaje 
             });
         }
 
-        // =================================================================
-        // PASO 2: CÁLCULO Y REGISTRO DE LA COMPRA (SI PASÓ LA VALIDACIÓN)
-        // =================================================================
-
+        // PASO 2: REGISTRO DE COMPRA
         let planFinanciamiento = {};
         let totalCompra = 0;
         
-        // Calculamos el total aproximado (El SP final hará el cálculo real, pero esto sirve para el plan)
         items.forEach(i => {
             const precio = parseFloat(i.precio || i.costo || i.paq_tur_monto_total || 0);
             totalCompra += precio * viajeros.length;
         });
 
-        // Configurar Plan de Financiamiento
         if (pago.plan === 'contado') {
             planFinanciamiento = { tipo: 'contado' };
         } else {
             const meses = pago.meses || (pago.plan === '3_meses' ? 3 : 12); 
-            const inicial = totalCompra * 0.5; // Ejemplo: 50% de inicial
+            const inicial = totalCompra * 0.5;
             planFinanciamiento = { 
                 tipo: 'credito', 
                 meses: meses, 
@@ -61,7 +49,6 @@ const processCheckout = async (req, res) => {
             };
         }
 
-        // Llamada al SP de Registro de Compra (8 parámetros)
         const queryCompra = `CALL sp_registrar_compra($1, $2, $3, $4, NULL, NULL, NULL, NULL)`;
         const valuesCompra = [
             user_id, 
@@ -76,20 +63,14 @@ const processCheckout = async (req, res) => {
         if (respCompra.o_status === 200) {
             await client.query('COMMIT');
 
-            // Datos útiles para el modal de pago
-            const compraId = respCompra.o_compra_id;
-            const montoAPagar = parseFloat(respCompra.o_total);
-            const origenTipo = (pago.plan === 'contado') ? 'compra' : 'cuota';
-            const origenId = (pago.plan === 'contado') ? compraId : respCompra.o_primera_cuota_id; 
-
             res.status(200).json({ 
                 success: true, 
                 message: respCompra.o_mensaje,
                 data: {
-                    compra_id: compraId,
-                    monto_pagar: montoAPagar,
-                    origen_tipo: origenTipo,
-                    origen_id: origenId
+                    compra_id: respCompra.o_compra_id,
+                    monto_pagar: parseFloat(respCompra.o_total),
+                    origen_tipo: (pago.plan === 'contado') ? 'compra' : 'cuota',
+                    origen_id: (pago.plan === 'contado') ? respCompra.o_compra_id : respCompra.o_primera_cuota_id
                 }
             });
         } else {
@@ -132,8 +113,34 @@ const markTicketUsed = async (req, res) => {
     }
 };
 
-module.exports = {
-    processCheckout,
-    getMyTickets,
-    markTicketUsed
+const getWishlistItemsForCart = async (req, res) => {
+    const { user_id } = req.body; 
+
+    try {
+        const result = await pool.query(
+            'SELECT * FROM mostrar_wishlist_filtrada($1, $2)', 
+            [user_id, 'TODO']
+        );
+
+        const items = result.rows.map(row => ({
+            id_original: row.codigo_producto,
+            nombre: row.nombre_producto,
+            precio: row.precio_final, 
+            tipo: row.tipo_producto.toLowerCase(),
+            fecha_inicio: row.fecha_inicio,
+            millas: row.millas || 0 
+        }));
+
+        res.json({ success: true, data: items });
+    } catch (err) {
+        console.error("Error fetching wishlist for cart:", err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+module.exports = { 
+    processCheckout, 
+    getMyTickets, 
+    markTicketUsed, 
+    getWishlistItemsForCart 
 };

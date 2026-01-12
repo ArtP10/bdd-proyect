@@ -9,7 +9,7 @@ const processCheckout = async (req, res) => {
     try {
         await client.query('BEGIN');
 
-        // PASO 1: VALIDACIÓN DE REGLAS
+        // PASO 1: VALIDACIÓN DE REGLAS (Igual que antes)
         const validQuery = `CALL sp_validar_reglas_compra($1, $2, $3, NULL, NULL)`;
         const validValues = [
             user_id,
@@ -61,16 +61,52 @@ const processCheckout = async (req, res) => {
         const respCompra = resultCompra.rows[0];
 
         if (respCompra.o_status === 200) {
+            
+            // ========================================================================
+            // CORRECCIÓN APLICADA AQUÍ
+            // ========================================================================
+            const compraId = respCompra.o_compra_id;
+            let montoAPagar = 0;
+            let origenTipo = '';
+            let origenId = 0;
+
+            if (pago.plan === 'contado') {
+                // Si es contado, se paga el total devuelto por el SP
+                montoAPagar = parseFloat(respCompra.o_total);
+                origenTipo = 'compra';
+                origenId = compraId;
+            } else {
+                // Si es crédito, NO USAMOS o_total. Buscamos la primera cuota generada.
+                // Esta consulta existía en tu versión "Working" y es necesaria.
+                const resCuota = await client.query(
+                    `SELECT cuo_codigo, cuo_monto FROM cuota 
+                     JOIN plan_financiamiento pf ON cuota.fk_plan_financiamiento = pf.plan_fin_codigo
+                     WHERE pf.fk_compra = $1 
+                     ORDER BY cuo_fecha_tope ASC 
+                     LIMIT 1`, 
+                    [compraId]
+                );
+                
+                if (resCuota.rows.length > 0) {
+                    montoAPagar = parseFloat(resCuota.rows[0].cuo_monto); // Esto será el 50% exacto
+                    origenTipo = 'cuota';
+                    origenId = resCuota.rows[0].cuo_codigo; // Obtenemos el ID real
+                } else {
+                    throw new Error("Error interno: Se registró la compra crédito pero no se generaron cuotas.");
+                }
+            }
+            // ========================================================================
+
             await client.query('COMMIT');
 
             res.status(200).json({ 
                 success: true, 
                 message: respCompra.o_mensaje,
                 data: {
-                    compra_id: respCompra.o_compra_id,
-                    monto_pagar: parseFloat(respCompra.o_total),
-                    origen_tipo: (pago.plan === 'contado') ? 'compra' : 'cuota',
-                    origen_id: (pago.plan === 'contado') ? respCompra.o_compra_id : respCompra.o_primera_cuota_id
+                    compra_id: compraId,
+                    monto_pagar: montoAPagar, // Ahora sí lleva el monto correcto (50% o 100%)
+                    origen_tipo: origenTipo,
+                    origen_id: origenId       // Ahora sí lleva el ID correcto
                 }
             });
         } else {
@@ -84,7 +120,7 @@ const processCheckout = async (req, res) => {
     } finally {
         client.release();
     }
-};
+};;
 
 const getMyTickets = async (req, res) => {
     const { user_id } = req.body;

@@ -153,15 +153,21 @@ const getWishlistItemsForCart = async (req, res) => {
     const { user_id } = req.body; 
 
     try {
+        // CORRECCIÓN 1: Llamar al nuevo SP renombrado
         const result = await pool.query(
-            'SELECT * FROM mostrar_wishlist_filtrada($1, $2)', 
+            'SELECT * FROM mostrar_wishlist_filtrada_sp($1, $2)', 
             [user_id, 'TODO']
         );
 
         const items = result.rows.map(row => ({
-            id_original: row.codigo_producto,
+            // CORRECCIÓN 2: Usar las claves que el Frontend YA está esperando.
+            // Cart.vue busca: item.id || item.codigo_producto
+            
+            id: row.codigo_producto,           // Envio directo para evitar fallos
+            codigo_producto: row.codigo_producto, // Respaldo para la lógica del front
+            
             nombre: row.nombre_producto,
-            precio: row.precio_final, 
+            precio: parseFloat(row.precio_final), // Asegurar float
             tipo: row.tipo_producto.toLowerCase(),
             fecha_inicio: row.fecha_inicio,
             millas: row.millas || 0 

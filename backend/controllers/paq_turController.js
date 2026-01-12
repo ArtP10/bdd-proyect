@@ -15,13 +15,16 @@ const createPackage = async (req, res) => {
         const values = [nombre, descripcion, monto_total, monto_subtotal, costo_millas];
         
         const result = await pool.query(query, values);
-        const resp = result.rows[0];
-        
+const resp = result.rows[0];
+
         if (resp.o_status_code === 201) {
             res.status(201).json({ success: true, message: resp.o_mensaje, paq_tur_codigo: resp.o_paq_tur_codigo });
         } else {
+            // AQUÍ ESTÁ EL ERROR REAL. Imprímelo para verlo en tu terminal.
+            console.error("Error SQL atrapado por SP:", resp.o_mensaje); 
             res.status(resp.o_status_code).json({ success: false, message: resp.o_mensaje });
-        }
+}
+        
     } catch (err) {
         console.error(err);
         res.status(500).json({ success: false, message: 'Error interno al crear paquete' });

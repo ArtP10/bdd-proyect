@@ -5160,3 +5160,93 @@ BEGIN
     ORDER BY r.res_fecha_hora_creacion DESC;
 END;
 $$;
+
+
+DROP FUNCTION IF EXISTS mostrar_wishlist_filtrada(INTEGER, TEXT);
+
+CREATE OR REPLACE FUNCTION mostrar_wishlist_filtrada_sp(p_usu_codigo INTEGER, p_filtro TEXT)
+RETURNS TABLE (
+    tipo_producto TEXT,
+    codigo_producto INTEGER,
+    nombre_producto TEXT,
+    descripcion_producto TEXT,
+    precio_original NUMERIC,
+    fecha_inicio TIMESTAMP,
+    porcentaje_descuento NUMERIC,
+    precio_final NUMERIC,
+    millas INTEGER
+) 
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        res.tipo_producto,
+        res.codigo_producto,
+        res.nombre_producto,
+        res.descripcion_producto,
+        res.precio_original,
+        res.fecha_inicio,
+        res.porcentaje_descuento,
+        ROUND(res.precio_original - (res.precio_original * res.porcentaje_descuento / 100), 2) AS precio_final,
+        res.millas
+    FROM (
+        -- Bloque PAQUETES
+        SELECT 
+            'PAQUETE'::TEXT AS tipo_producto, 
+            p.paq_tur_codigo AS codigo_producto, 
+            p.paq_tur_nombre::TEXT AS nombre_producto, 
+            COALESCE(p.paq_tur_descripcion, 'Sin descripción')::TEXT AS descripcion_producto, 
+            COALESCE(p.paq_tur_monto_total, 0)::NUMERIC AS precio_original,
+            (SELECT MIN(inicio) FROM (
+                SELECT s.ser_fecha_hora_inicio AS inicio FROM paq_ser ps JOIN servicio s ON ps.fk_ser_codigo = s.ser_codigo WHERE ps.fk_paq_tur_codigo = p.paq_tur_codigo
+                UNION ALL
+                SELECT t.tras_fecha_hora_inicio AS inicio FROM paq_tras pt JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo WHERE pt.fk_paq_tur_codigo = p.paq_tur_codigo
+            ) as fechas) AS fecha_inicio,
+            COALESCE((SELECT MAX(prom.prom_descuento) FROM paq_prom pp JOIN promocion prom ON pp.fk_prom_codigo = prom.prom_codigo WHERE pp.fk_paq_tur_codigo = p.paq_tur_codigo AND prom.prom_fecha_hora_vencimiento > NOW()), 0)::NUMERIC AS porcentaje_descuento,
+            COALESCE(p.paq_tur_costo_en_millas, 0) AS millas 
+        FROM lista_deseos ld
+        JOIN paquete_turistico p ON ld.fk_paquete_turistico = p.paq_tur_codigo
+        WHERE ld.fk_usuario = p_usu_codigo
+
+        UNION ALL
+
+        -- Bloque SERVICIOS
+        SELECT 
+            'SERVICIO'::TEXT, 
+            s.ser_codigo, 
+            s.ser_nombre::TEXT, 
+            COALESCE(s.ser_descripcion, 'Sin descripción')::TEXT, 
+            COALESCE(s.ser_costo, 0)::NUMERIC,
+            s.ser_fecha_hora_inicio,
+            COALESCE((SELECT MAX(prom.prom_descuento) FROM ser_prom sp JOIN promocion prom ON sp.fk_prom_codigo = prom.prom_codigo WHERE sp.fk_ser_codigo = s.ser_codigo AND prom.prom_fecha_hora_vencimiento > NOW()), 0)::NUMERIC,
+            COALESCE(s.ser_millas_otorgadas, 0)
+        FROM lista_deseos ld
+        JOIN servicio s ON ld.fk_servicio = s.ser_codigo
+        WHERE ld.fk_usuario = p_usu_codigo
+
+        UNION ALL
+
+        -- Bloque TRASLADOS
+        SELECT 
+            'TRASLADO'::TEXT, 
+            t.tras_codigo, 
+            (COALESCE(ter_o.ter_nombre, 'Origen') || ' -> ' || COALESCE(ter_d.ter_nombre, 'Destino'))::TEXT, 
+            (COALESCE(r.rut_tipo, 'Transporte') || ' | ' || TO_CHAR(t.tras_fecha_hora_inicio, 'DD/MM HH24:MI'))::TEXT,
+            COALESCE(r.rut_costo, 0)::NUMERIC,
+            t.tras_fecha_hora_inicio,
+            COALESCE((SELECT MAX(prom.prom_descuento) FROM tras_prom tp JOIN promocion prom ON tp.fk_prom_codigo = prom.prom_codigo WHERE tp.fk_tras_codigo = t.tras_codigo AND prom.prom_fecha_hora_vencimiento > NOW()), 0)::NUMERIC,
+            COALESCE(r.rut_millas_otorgadas, 0)
+        FROM lista_deseos ld
+        JOIN traslado t ON ld.fk_traslado = t.tras_codigo
+        LEFT JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo
+        LEFT JOIN terminal ter_o ON r.fk_terminal_origen = ter_o.ter_codigo
+        LEFT JOIN terminal ter_d ON r.fk_terminal_destino = ter_d.ter_codigo
+        WHERE ld.fk_usuario = p_usu_codigo
+    ) AS res
+    WHERE UPPER(TRIM(p_filtro)) = 'TODO' OR UPPER(TRIM(res.tipo_producto)) = UPPER(TRIM(p_filtro));
+END;
+$$;
+
+
+SELECT setval('paquete_turistico_paq_tur_codigo_seq', (SELECT MAX(paq_tur_codigo) FROM paquete_turistico));

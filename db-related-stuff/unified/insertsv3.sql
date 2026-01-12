@@ -674,7 +674,10 @@ INSERT INTO paquete_turistico (paq_tur_codigo, paq_tur_nombre, paq_tur_monto_tot
 (17, 'Escapada Romántica Galipán', 250.00, 220.00, 8000),
 (18, 'Selva Amazónica Profunda', 900.00, 850.00, 35000),
 (19, 'Ruta del Cacao Choroní', 300.00, 280.00, 10000),
-(20, 'Pesca Deportiva La Guaira', 550.00, 500.00, 18000);
+(20, 'Pesca Deportiva La Guaira', 550.00, 500.00, 18000),
+(21, 'Paquete Prueba 1', 550.00, 500.00, 18000),
+(22, 'Paquete Prueba 2', 552.00, 502.00, 12000);
+
 
 -- 1.3 Asignar Servicios a estos Paquetes (Tabla paq_ser)
 INSERT INTO paq_ser (fk_paq_tur_codigo, fk_ser_codigo, cantidad) VALUES 
@@ -687,11 +690,12 @@ INSERT INTO paq_ser (fk_paq_tur_codigo, fk_ser_codigo, cantidad) VALUES
 (17, 1, 1), (17, 6, 1),  -- Galipán: Hotel + Comida
 (18, 4, 1), (18, 10, 1), -- Amazonas: Safari + Seguro
 (19, 1, 2), (19, 3, 1),  -- Choroní: Hotel + Tour
-(20, 7, 1), (20, 6, 1);  -- Pesca: Actividad + Comida
+(20, 7, 1), (20, 6, 1),  -- Pesca: Actividad + Comida
+(21, 8, 1), (21, 9, 1);
 
 -- 1.4 Asignar Traslados (Tabla paq_tras)
 INSERT INTO paq_tras (fk_paq_tur_codigo, fk_tras_codigo) VALUES 
-(11, 10), (13, 1), (15, 1), (16, 3), (17, 9), (18, 5), (19, 3), (20, 4);
+(11, 10), (13, 1), (15, 1), (16, 3), (17, 9), (18, 5), (19, 3), (20, 4), (21, 10), (22, 9), (21, 9), (22, 10);
 
 
 -- ==========================================================================

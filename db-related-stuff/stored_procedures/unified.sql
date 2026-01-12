@@ -2146,22 +2146,14 @@ DECLARE
     v_millas_ganadas INTEGER := 0;
     v_millas_ruta INTEGER;
     v_millas_servicio INTEGER;
-    v_millas_paquete INTEGER;
-    v_es_componente_paquete BOOLEAN := FALSE;
 BEGIN
-    -- 0. PREVENCIÓN: Si es un componente interno de un paquete (tiene fk_paquete Y (fk_traslado o fk_servicio)),
-    --    generalmente NO queremos dar millas dobles (por el paquete y por el vuelo).
-    --    Asumiremos que las millas se ganan por el PAQUETE completo, no por sus partes individuales.
-    IF NEW.fk_paquete_turistico IS NOT NULL AND (NEW.fk_traslado IS NOT NULL OR NEW.fk_servicio IS NOT NULL) THEN
-        v_es_componente_paquete := TRUE;
+    -- 1. REGLA DE ORO: Si el item pertenece a un paquete, NO otorga millas.
+    -- El incentivo del paquete es el precio, no las millas.
+    IF NEW.fk_paquete_turistico IS NOT NULL THEN
+        RETURN NEW; -- Salimos inmediatamente, no suma nada.
     END IF;
 
-    -- Si es componente interno, salimos y no damos millas (ya las dará el header del paquete)
-    IF v_es_componente_paquete THEN
-        RETURN NEW;
-    END IF;
-
-    -- 1. Calcular millas si es Traslado INDIVIDUAL
+    -- 2. Calcular millas si es Traslado INDIVIDUAL (Sin paquete)
     IF NEW.fk_traslado IS NOT NULL THEN
         SELECT r.rut_millas_otorgadas INTO v_millas_ruta
         FROM traslado t
@@ -2170,31 +2162,20 @@ BEGIN
         
         v_millas_ganadas := COALESCE(v_millas_ruta, 0);
     
-    -- 2. Calcular millas si es Servicio INDIVIDUAL
+    -- 3. Calcular millas si es Servicio INDIVIDUAL (Sin paquete)
     ELSIF NEW.fk_servicio IS NOT NULL THEN
         SELECT ser_millas_otorgadas INTO v_millas_servicio
         FROM servicio WHERE ser_codigo = NEW.fk_servicio;
         
         v_millas_ganadas := COALESCE(v_millas_servicio, 0);
-
-    -- 3. Calcular millas si es Paquete (HEADER)
-    ELSIF NEW.fk_paquete_turistico IS NOT NULL THEN
-        SELECT paq_tur_costo_en_millas INTO v_millas_paquete 
-        FROM paquete_turistico WHERE paq_tur_codigo = NEW.fk_paquete_turistico;
-        
-        v_millas_ganadas := COALESCE(v_millas_paquete, 0);
     END IF;
 
-    -- 4. Actualizar Usuario y Registrar Historial
+    -- 4. Actualizar Usuario
     IF v_millas_ganadas > 0 THEN
-        -- CRITICO: Usamos COALESCE(usu_total_millas, 0) para evitar que NULL + 100 = NULL
         UPDATE usuario 
         SET usu_total_millas = COALESCE(usu_total_millas, 0) + v_millas_ganadas
         WHERE usu_codigo = (SELECT fk_usuario FROM compra WHERE com_codigo = NEW.fk_compra);
 
-        -- Insertamos en historial
-        -- Asegúrate de que esta estructura coincida con tu tabla 'milla' actual.
-        -- Si agregaste columnas nuevas (como mil_valor_restado), asegúrate que acepten NULL o tengan DEFAULT.
         INSERT INTO milla (mil_valor_obtenido, mil_fecha_inicio, fk_compra, fk_pago)
         VALUES (v_millas_ganadas, CURRENT_DATE, NEW.fk_compra, NULL); 
     END IF;
@@ -2362,7 +2343,7 @@ DECLARE
     v_viajero_json JSON;
     v_viajero_id INTEGER;
     v_costo_unitario NUMERIC;
-    v_descuento_pct NUMERIC; -- Variable para el descuento
+    v_descuento_pct NUMERIC; 
     v_plan_fin_id INTEGER;
     v_monto_inicial NUMERIC;
     v_monto_financiar NUMERIC;
@@ -2371,6 +2352,12 @@ DECLARE
     v_cuota_mensual NUMERIC;
     v_meses INTEGER;
     v_fecha_pago DATE;
+
+    -- Variables para el desglose de paquetes
+    v_sub_servicio RECORD;
+    v_sub_traslado RECORD;
+    v_paquete_valido BOOLEAN;
+    v_precio_paquete NUMERIC;
 BEGIN
     -- 1. Crear Cabecera de Compra
     INSERT INTO compra (com_monto_total, com_monto_subtotal, com_fecha, fk_usuario)
@@ -2385,50 +2372,104 @@ BEGIN
             v_costo_unitario := 0;
             v_descuento_pct := 0;
             
-            -- =================================================================================
-            -- LÓGICA DE PRECIOS Y DESCUENTOS (NUEVO BLOQUE)
-            -- =================================================================================
-            
+            -- A. SERVICIOS INDIVIDUALES
             IF v_item.tipo = 'servicio' THEN
-                SELECT ser_costo INTO v_costo_unitario FROM servicio WHERE ser_codigo = v_item.id;
+                SELECT ser_costo, ser_fecha_hora_inicio INTO v_costo_unitario, v_fecha_pago -- reusando v_fecha_pago temporalmente para fecha inicio
+                FROM servicio WHERE ser_codigo = v_item.id;
                 
-                -- Buscar mejor descuento activo
+                -- Validación simple de fecha
+                IF v_fecha_pago < NOW() THEN
+                    RAISE EXCEPTION 'El servicio % ya ha comenzado', v_item.id;
+                END IF;
+
                 SELECT COALESCE(MAX(p.prom_descuento), 0) INTO v_descuento_pct
                 FROM ser_prom sp JOIN promocion p ON sp.fk_prom_codigo = p.prom_codigo
                 WHERE sp.fk_ser_codigo = v_item.id AND p.prom_fecha_hora_vencimiento > NOW();
 
-                -- Aplicar descuento
                 v_costo_unitario := v_costo_unitario - (v_costo_unitario * v_descuento_pct / 100);
+                v_total := v_total + v_costo_unitario;
 
                 INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, det_res_estado)
                 VALUES ((SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva WHERE fk_compra = o_compra_id), CURRENT_DATE, CURRENT_TIME, COALESCE(v_costo_unitario, 0), 0, v_viajero_id, 1, o_compra_id, v_item.id, 'Confirmada');
 
+            -- B. TRASLADOS INDIVIDUALES
             ELSIF v_item.tipo = 'traslado' THEN
-                 SELECT r.rut_costo INTO v_costo_unitario FROM traslado t JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo WHERE t.tras_codigo = v_item.id;
+                 SELECT r.rut_costo, t.tras_fecha_hora_inicio INTO v_costo_unitario, v_fecha_pago
+                 FROM traslado t JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo WHERE t.tras_codigo = v_item.id;
                  
+                 IF v_fecha_pago < NOW() THEN
+                    RAISE EXCEPTION 'El traslado % ya ha salido', v_item.id;
+                 END IF;
+
                  SELECT COALESCE(MAX(p.prom_descuento), 0) INTO v_descuento_pct
                  FROM tras_prom tp JOIN promocion p ON tp.fk_prom_codigo = p.prom_codigo
                  WHERE tp.fk_tras_codigo = v_item.id AND p.prom_fecha_hora_vencimiento > NOW();
 
                  v_costo_unitario := v_costo_unitario - (v_costo_unitario * v_descuento_pct / 100);
+                 v_total := v_total + v_costo_unitario;
 
                  INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_traslado, det_res_estado)
                  VALUES ((SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva WHERE fk_compra = o_compra_id), CURRENT_DATE, CURRENT_TIME, COALESCE(v_costo_unitario, 0), 0, v_viajero_id, 1, o_compra_id, v_item.id, 'Confirmada');
 
+            -- C. PAQUETES (Lógica Nueva)
             ELSIF v_item.tipo = 'paquete' THEN
-                 SELECT paq_tur_monto_total INTO v_costo_unitario FROM paquete_turistico WHERE paq_tur_codigo = v_item.id;
+                 -- 1. Validar fechas del paquete (La fecha más temprana)
+                 SELECT NOT EXISTS (
+                    SELECT 1 FROM paq_ser ps JOIN servicio s ON ps.fk_ser_codigo = s.ser_codigo 
+                    WHERE ps.fk_paq_tur_codigo = v_item.id AND s.ser_fecha_hora_inicio < NOW()
+                    UNION
+                    SELECT 1 FROM paq_tras pt JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo 
+                    WHERE pt.fk_paq_tur_codigo = v_item.id AND t.tras_fecha_hora_inicio < NOW()
+                 ) INTO v_paquete_valido;
+
+                 IF NOT v_paquete_valido THEN
+                    RAISE EXCEPTION 'El paquete % contiene actividades que ya han pasado', v_item.id;
+                 END IF;
+
+                 -- 2. Calcular Precio del Paquete y Descuento
+                 SELECT paq_tur_monto_total INTO v_precio_paquete FROM paquete_turistico WHERE paq_tur_codigo = v_item.id;
                  
                  SELECT COALESCE(MAX(p.prom_descuento), 0) INTO v_descuento_pct
                  FROM paq_prom pp JOIN promocion p ON pp.fk_prom_codigo = p.prom_codigo
                  WHERE pp.fk_paq_tur_codigo = v_item.id AND p.prom_fecha_hora_vencimiento > NOW();
 
-                 v_costo_unitario := v_costo_unitario - (v_costo_unitario * v_descuento_pct / 100);
+                 v_precio_paquete := v_precio_paquete - (v_precio_paquete * v_descuento_pct / 100);
+                 
+                 -- Sumamos el total DEL PAQUETE a la compra general
+                 v_total := v_total + v_precio_paquete;
 
-                 INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_paquete_turistico, det_res_estado)
-                 VALUES ((SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva WHERE fk_compra = o_compra_id), CURRENT_DATE, CURRENT_TIME, COALESCE(v_costo_unitario, 0), 0, v_viajero_id, 1, o_compra_id, v_item.id, 'Confirmada');
+                 -- 3. Desglosar e Insertar Componentes (Costo 0 en detalle para no duplicar suma, referencia cruzada)
+                 
+                 -- 3.1 Servicios del Paquete
+                 FOR v_sub_servicio IN SELECT fk_ser_codigo, cantidad FROM paq_ser WHERE fk_paq_tur_codigo = v_item.id LOOP
+                     INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_servicio, fk_paquete_turistico, det_res_estado)
+                     VALUES (
+                        (SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva WHERE fk_compra = o_compra_id), 
+                        CURRENT_DATE, CURRENT_TIME, 
+                        0, -- Precio 0 individual, ya se cobró en el total
+                        0, 
+                        v_viajero_id, 1, o_compra_id, 
+                        v_sub_servicio.fk_ser_codigo, -- Referencia al hijo
+                        v_item.id,                    -- Referencia al padre (Paquete)
+                        'Confirmada'
+                     );
+                 END LOOP;
+
+                 -- 3.2 Traslados del Paquete
+                 FOR v_sub_traslado IN SELECT fk_tras_codigo FROM paq_tras WHERE fk_paq_tur_codigo = v_item.id LOOP
+                     INSERT INTO detalle_reserva (det_res_codigo, det_res_fecha_creacion, det_res_hora_creacion, det_res_monto_total, det_res_sub_total, fk_viajero_codigo, fk_viajero_numero, fk_compra, fk_traslado, fk_paquete_turistico, det_res_estado)
+                     VALUES (
+                        (SELECT COALESCE(MAX(det_res_codigo),0)+1 FROM detalle_reserva WHERE fk_compra = o_compra_id), 
+                        CURRENT_DATE, CURRENT_TIME, 
+                        0, 
+                        0, 
+                        v_viajero_id, 1, o_compra_id, 
+                        v_sub_traslado.fk_tras_codigo, -- Referencia al hijo
+                        v_item.id,                     -- Referencia al padre (Paquete)
+                        'Confirmada'
+                     );
+                 END LOOP;
             END IF;
-
-            v_total := v_total + COALESCE(v_costo_unitario, 0);
         END LOOP;
     END LOOP;
 
@@ -2436,7 +2477,7 @@ BEGIN
     UPDATE compra SET com_monto_total = v_total, com_monto_subtotal = v_total WHERE com_codigo = o_compra_id;
     o_total := v_total;
 
-    -- 3. Manejo de Financiamiento (IGUAL QUE ANTES, pero usando el v_total ya descontado)
+    -- 3. Manejo de Financiamiento (Mantengo tu lógica original)
     IF (i_plan_financiamiento->>'tipo') = 'credito' THEN
         v_monto_inicial := v_total * 0.50; 
         v_monto_financiar := v_total - v_monto_inicial;
@@ -2613,6 +2654,191 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
+
+CREATE OR REPLACE PROCEDURE sp_solicitar_reembolso(
+    IN i_compra_id INTEGER,
+    OUT o_monto_reembolsado NUMERIC,
+    OUT o_status INTEGER,
+    OUT o_mensaje TEXT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    -- Variables Financieras
+    v_total_viaje_usd NUMERIC;
+    v_total_pagado_usd NUMERIC;
+    v_penalizacion_usd NUMERIC;
+    v_a_devolver_usd NUMERIC;
+    
+    -- Variables de Pago
+    v_last_pago RECORD;
+    v_nuevo_pago_id INTEGER;
+    v_nuevo_metodo_id INTEGER;
+    v_metodo_descripcion TEXT;
+    
+    -- Variables de Control
+    v_estado_cancelado_id INTEGER;
+    v_ya_paso BOOLEAN;
+    v_paquete_iniciado BOOLEAN;
+    
+    -- Variables de Conversión
+    v_tasa_valor NUMERIC;
+    v_monto_final_registro NUMERIC; 
+    v_retencion_final_registro NUMERIC;
+    
+    -- VARIABLES PARA MILLAS
+    v_millas_ganadas INTEGER;
+    v_saldo_actual INTEGER;
+    v_usuario_id INTEGER;
+BEGIN
+    -- 1. OBTENER ID USUARIO (Necesario para validaciones)
+    SELECT fk_usuario INTO v_usuario_id FROM compra WHERE com_codigo = i_compra_id;
+    IF v_usuario_id IS NULL THEN o_status := 404; o_mensaje := 'Compra no encontrada'; RETURN; END IF;
+
+    -- =================================================================================
+    -- VALIDACIONES PREVIAS (Bloquean el proceso antes de calcular dinero)
+    -- =================================================================================
+
+    -- A. Ticket Usado
+    SELECT EXISTS (SELECT 1 FROM detalle_reserva WHERE fk_compra = i_compra_id AND det_res_estado = 'Completada') INTO v_ya_paso;
+    IF v_ya_paso THEN o_status := 400; o_mensaje := 'No reembolsable: Tickets ya utilizados.'; RETURN; END IF;
+
+    -- B. Fechas Vencidas (Servicios/Traslados)
+    SELECT EXISTS (
+        SELECT 1 FROM detalle_reserva dr
+        LEFT JOIN servicio s ON dr.fk_servicio = s.ser_codigo
+        LEFT JOIN traslado t ON dr.fk_traslado = t.tras_codigo
+        WHERE dr.fk_compra = i_compra_id 
+          AND (s.ser_fecha_hora_inicio < NOW() OR t.tras_fecha_hora_inicio < NOW())
+    ) INTO v_ya_paso;
+    IF v_ya_paso THEN o_status := 400; o_mensaje := 'No reembolsable: Viaje ya iniciado.'; RETURN; END IF;
+
+    -- C. Fechas Vencidas (Paquetes)
+    SELECT EXISTS (
+        SELECT 1 FROM detalle_reserva dr JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
+        WHERE dr.fk_compra = i_compra_id
+          AND (
+              EXISTS (SELECT 1 FROM paq_ser ps JOIN servicio s ON ps.fk_ser_codigo = s.ser_codigo WHERE ps.fk_paq_tur_codigo = pq.paq_tur_codigo AND s.ser_fecha_hora_inicio < NOW())
+              OR
+              EXISTS (SELECT 1 FROM paq_tras pt JOIN traslado t ON pt.fk_tras_codigo = t.tras_codigo WHERE pt.fk_paq_tur_codigo = pq.paq_tur_codigo AND t.tras_fecha_hora_inicio < NOW())
+          )
+    ) INTO v_paquete_iniciado;
+    IF v_paquete_iniciado THEN o_status := 400; o_mensaje := 'No reembolsable: Paquete ya iniciado.'; RETURN; END IF;
+
+    -- D. VALIDAR SALDO DE MILLAS (NUEVO)
+    -- Verificamos si el usuario tiene suficientes millas para "devolver" las que ganó
+    SELECT COALESCE(SUM(mil_valor_obtenido), 0) INTO v_millas_ganadas
+    FROM milla 
+    WHERE fk_compra = i_compra_id; -- Sumamos lo que ganó originalmente con esta compra
+
+    IF v_millas_ganadas > 0 THEN
+        SELECT usu_total_millas INTO v_saldo_actual FROM usuario WHERE usu_codigo = v_usuario_id;
+        
+        IF v_saldo_actual < v_millas_ganadas THEN
+            o_status := 400; 
+            o_mensaje := 'No reembolsable: Ya has utilizado las millas ('|| v_millas_ganadas ||') generadas por esta compra.'; 
+            RETURN; -- Bloqueamos el reembolso aquí
+        END IF;
+    END IF;
+
+    -- =================================================================================
+    -- 2. CÁLCULOS FINANCIEROS
+    -- =================================================================================
+    SELECT com_monto_total INTO v_total_viaje_usd FROM compra WHERE com_codigo = i_compra_id;
+    
+    SELECT COALESCE(SUM(p.pag_monto / tc.tas_cam_tasa_valor), 0) 
+    INTO v_total_pagado_usd 
+    FROM pago p
+    JOIN tasa_de_cambio tc ON p.fk_tasa_de_cambio = tc.tas_cam_codigo
+    WHERE p.fk_compra = i_compra_id;
+
+    v_penalizacion_usd := v_total_viaje_usd * 0.10;
+    v_a_devolver_usd := v_total_pagado_usd - v_penalizacion_usd;
+
+    IF v_a_devolver_usd < 0 THEN v_a_devolver_usd := 0; END IF;
+
+    -- 3. OBTENER DATOS PARA REBOTE
+    SELECT * INTO v_last_pago FROM pago WHERE fk_compra = i_compra_id ORDER BY pag_fecha_hora DESC LIMIT 1;
+    
+    IF v_last_pago IS NULL THEN 
+        -- Cancelación simple si no hubo pagos (Millas igual se reversan abajo si hubiese)
+        UPDATE detalle_reserva SET det_res_estado = 'Cancelada' WHERE fk_compra = i_compra_id;
+        v_nuevo_pago_id := NULL; -- No hay pago negativo
+    ELSE
+        -- 4. CONVERSIÓN A MONEDA LOCAL
+        SELECT tas_cam_tasa_valor INTO v_tasa_valor FROM tasa_de_cambio WHERE tas_cam_codigo = v_last_pago.fk_tasa_de_cambio;
+        v_monto_final_registro := v_a_devolver_usd * v_tasa_valor;
+        v_retencion_final_registro := v_penalizacion_usd * v_tasa_valor;
+
+        -- 5. REGISTRAR PAGO NEGATIVO
+        IF v_monto_final_registro > 0 THEN
+            SELECT ('Reembolso ref. Pago #' || v_last_pago.pag_codigo) INTO v_metodo_descripcion;
+            
+            INSERT INTO metodo_pago (met_pag_descripcion, fk_tipo_metodo)
+            SELECT v_metodo_descripcion, fk_tipo_metodo FROM metodo_pago WHERE met_pag_codigo = v_last_pago.fk_metodo_pago
+            RETURNING met_pag_codigo INTO v_nuevo_metodo_id;
+
+            INSERT INTO pago (pag_monto, pag_fecha_hora, pag_denominacion, fk_compra, fk_tasa_de_cambio, fk_metodo_pago)
+            VALUES ((v_monto_final_registro * -1), NOW(), v_last_pago.pag_denominacion, i_compra_id, v_last_pago.fk_tasa_de_cambio, v_nuevo_metodo_id)
+            RETURNING pag_codigo INTO v_nuevo_pago_id;
+
+            INSERT INTO reembolso (rem_monto_reembolsado, rem_monto_retenido, rem_fecha, fk_pago)
+            VALUES (v_monto_final_registro, v_retencion_final_registro, CURRENT_DATE, v_nuevo_pago_id);
+        END IF;
+    END IF;
+
+    -- 6. GESTIÓN DE ESTADOS (CANCELACIÓN)
+    UPDATE detalle_reserva SET det_res_estado = 'Cancelada' WHERE fk_compra = i_compra_id;
+
+    UPDATE cuo_est ce SET cuo_est_fecha_fin = NOW()
+    FROM cuota c JOIN plan_financiamiento pf ON c.fk_plan_financiamiento = pf.plan_fin_codigo
+    WHERE c.cuo_codigo = ce.fk_cuo_codigo AND pf.fk_compra = i_compra_id AND ce.cuo_est_fecha_fin = 'infinity'::TIMESTAMP;
+
+    SELECT est_codigo INTO v_estado_cancelado_id FROM estado WHERE est_nombre = 'Cancelado';
+    
+    INSERT INTO cuo_est (fk_cuo_codigo, fk_est_codigo, cuo_est_fecha, cuo_est_fecha_fin)
+    SELECT c.cuo_codigo, v_estado_cancelado_id, NOW(), 'infinity'::TIMESTAMP
+    FROM cuota c JOIN plan_financiamiento pf ON c.fk_plan_financiamiento = pf.plan_fin_codigo
+    WHERE pf.fk_compra = i_compra_id
+      AND NOT EXISTS (SELECT 1 FROM cuo_est x JOIN estado e ON x.fk_est_codigo = e.est_codigo WHERE x.fk_cuo_codigo = c.cuo_codigo AND e.est_nombre = 'Pagado');
+
+    -- =================================================================================
+    -- 7. REVERSIÓN DE MILLAS (EJECUCIÓN)
+    -- =================================================================================
+    IF v_millas_ganadas > 0 THEN
+        -- A. Restar del saldo del usuario
+        UPDATE usuario 
+        SET usu_total_millas = usu_total_millas - v_millas_ganadas
+        WHERE usu_codigo = v_usuario_id;
+
+        -- B. Registrar Egreso en tabla 'milla' con la nueva estructura
+        INSERT INTO milla (
+            mil_valor_obtenido, 
+            mil_fecha_inicio, 
+            mil_fecha_fin,
+            mil_valor_restado,  -- Columna correcta para egresos
+            fk_compra,          -- NULO según requerimiento
+            fk_pago             -- Vinculado al pago de reembolso (si existe)
+        )
+        VALUES (
+            NULL, 
+            CURRENT_DATE, 
+            NULL,
+            v_millas_ganadas, 
+            NULL, 
+            v_nuevo_pago_id
+        );
+    END IF;
+
+    o_monto_reembolsado := v_monto_final_registro;
+    o_status := 200;
+    o_mensaje := 'Reembolso procesado. Millas descontadas: ' || COALESCE(v_millas_ganadas, 0);
+
+EXCEPTION WHEN OTHERS THEN
+    o_status := 500; o_mensaje := 'Error CRITICO: ' || SQLERRM;
+END;
+$$;
+
 -- ==============================================================================
 -- 4. SP PARA OBTENER TICKETS (MIS SERVICIOS)
 -- ==============================================================================
@@ -2631,18 +2857,24 @@ RETURNS TABLE (
     estado VARCHAR,
     fk_compra INTEGER,
     det_res_codigo INTEGER,
-    reclamo_estado VARCHAR,    -- NUEVO
-    reclamo_respuesta VARCHAR  -- NUEVO
+    reclamo_estado VARCHAR,
+    reclamo_respuesta VARCHAR
 ) AS $$
 BEGIN
     RETURN QUERY
     SELECT * FROM (
-        -- 1. TRASLADOS
+        -- 1. TRASLADOS (Modificado para incluir los de paquetes)
         SELECT 
             ('TRS-' || dr.fk_compra || '-' || dr.det_res_codigo)::VARCHAR,
             'Traslado'::VARCHAR,
             (COALESCE(orig.ter_nombre, 'N/A') || ' ➝ ' || COALESCE(dest.ter_nombre, 'N/A'))::VARCHAR,
-            (COALESCE(mt.med_tra_descripcion, 'Transporte') || ' (' || COALESCE(mt.med_tra_tipo, '-') || ')')::VARCHAR,
+            
+            -- EN EL SUBTITULO MOSTRAMOS SI ES DE PAQUETE
+            CASE 
+                WHEN pq.paq_tur_nombre IS NOT NULL THEN '📦 Pack: ' || pq.paq_tur_nombre
+                ELSE (COALESCE(mt.med_tra_descripcion, 'Transporte') || ' (' || COALESCE(mt.med_tra_tipo, '-') || ')')
+            END::VARCHAR as subtitulo,
+
             'Asiento: General'::VARCHAR,
             t.tras_fecha_hora_inicio,
             t.tras_fecha_hora_fin,
@@ -2652,11 +2884,13 @@ BEGIN
             dr.det_res_estado::VARCHAR,
             dr.fk_compra,
             dr.det_res_codigo,
-            rec.rec_estado,     -- Join con Reclamo
+            rec.rec_estado,
             rec.rec_respuesta
         FROM detalle_reserva dr
         JOIN compra c ON dr.fk_compra = c.com_codigo
         JOIN traslado t ON dr.fk_traslado = t.tras_codigo
+        -- LEFT JOIN CON PAQUETE PARA OBTENER EL NOMBRE
+        LEFT JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo 
         LEFT JOIN medio_transporte mt ON t.fk_med_tra_codigo = mt.med_tra_codigo
         LEFT JOIN ruta r ON t.fk_rut_codigo = r.rut_codigo
         LEFT JOIN terminal orig ON r.fk_terminal_origen = orig.ter_codigo
@@ -2665,17 +2899,23 @@ BEGIN
         JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
         LEFT JOIN reclamo rec ON rec.fk_detalle_reserva = dr.fk_compra AND rec.fk_detalle_reserva_2 = dr.det_res_codigo
         WHERE c.fk_usuario = _usu_id 
-          AND dr.fk_paquete_turistico IS NULL 
+          -- [CORRECCIÓN] QUITAMOS EL "AND dr.fk_paquete_turistico IS NULL"
           AND dr.det_res_estado IN ('Confirmada', 'Completada', 'Cancelada')
 
         UNION ALL
 
-        -- 2. SERVICIOS
+        -- 2. SERVICIOS (Modificado para incluir los de paquetes)
         SELECT 
             ('SRV-' || dr.fk_compra || '-' || dr.det_res_codigo)::VARCHAR,
             'Servicio'::VARCHAR,
             s.ser_nombre::VARCHAR,
-            p.prov_nombre::VARCHAR,
+            
+            -- EN EL SUBTITULO MOSTRAMOS SI ES DE PAQUETE O EL PROVEEDOR
+            CASE 
+                WHEN pq.paq_tur_nombre IS NOT NULL THEN '📦 Pack: ' || pq.paq_tur_nombre
+                ELSE p.prov_nombre
+            END::VARCHAR as subtitulo,
+
             ('Tipo: ' || s.ser_tipo)::VARCHAR,
             s.ser_fecha_hora_inicio,
             s.ser_fecha_hora_fin,
@@ -2690,28 +2930,29 @@ BEGIN
         FROM detalle_reserva dr
         JOIN compra c ON dr.fk_compra = c.com_codigo
         JOIN servicio s ON dr.fk_servicio = s.ser_codigo
+        -- LEFT JOIN CON PAQUETE
+        LEFT JOIN paquete_turistico pq ON dr.fk_paquete_turistico = pq.paq_tur_codigo
         JOIN proveedor p ON s.fk_prov_codigo = p.prov_codigo
         JOIN lugar l ON p.fk_lugar = l.lug_codigo
         JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
         LEFT JOIN reclamo rec ON rec.fk_detalle_reserva = dr.fk_compra AND rec.fk_detalle_reserva_2 = dr.det_res_codigo
         WHERE c.fk_usuario = _usu_id 
-          AND dr.fk_paquete_turistico IS NULL
+          -- [CORRECCIÓN] QUITAMOS EL "AND dr.fk_paquete_turistico IS NULL"
           AND dr.det_res_estado IN ('Confirmada', 'Completada', 'Cancelada')
 
+        -- SECCIÓN 3: PAQUETES (LEGACY)
+        -- Esta sección solo traerá resultados si existen filas antiguas donde se compró
+        -- el paquete como un bloque sin detalles. Con la nueva lógica, esto vendrá vacío,
+        -- lo cual es correcto para no duplicar tickets.
         UNION ALL
 
-        -- 3. PAQUETES
         SELECT 
             ('PAQ-' || dr.fk_compra || '-' || dr.det_res_codigo)::VARCHAR,
             'Paquete Turístico'::VARCHAR,
             pq.paq_tur_nombre::VARCHAR,
             'Resumen del Paquete'::VARCHAR,
             'Ver detalles completos'::VARCHAR,
-            COALESCE(
-                (SELECT MIN(ser_fecha_hora_inicio) FROM servicio s JOIN paq_ser ps ON s.ser_codigo = ps.fk_ser_codigo WHERE ps.fk_paq_tur_codigo = pq.paq_tur_codigo),
-                (SELECT MIN(tras_fecha_hora_inicio) FROM traslado tr JOIN paq_tras pt ON tr.tras_codigo = pt.fk_tras_codigo WHERE pt.fk_paq_tur_codigo = pq.paq_tur_codigo),
-                c.com_fecha::TIMESTAMP
-            ) as fecha_inicio,
+            c.com_fecha::TIMESTAMP, -- Fecha genérica
             NULL::TIMESTAMP,
             'Multi-Destino'::VARCHAR,
             (v.via_prim_nombre || ' ' || v.via_prim_apellido)::VARCHAR,
@@ -2727,7 +2968,7 @@ BEGIN
         JOIN viajero v ON dr.fk_viajero_codigo = v.via_codigo
         LEFT JOIN reclamo rec ON rec.fk_detalle_reserva = dr.fk_compra AND rec.fk_detalle_reserva_2 = dr.det_res_codigo
         WHERE c.fk_usuario = _usu_id 
-          AND dr.fk_servicio IS NULL AND dr.fk_traslado IS NULL
+          AND dr.fk_servicio IS NULL AND dr.fk_traslado IS NULL -- Solo paquetes puros
           AND dr.det_res_estado IN ('Confirmada', 'Completada', 'Cancelada')
 
     ) AS tickets_unificados
